@@ -6,11 +6,13 @@
  * - FTS5 for keyword search
  * - Vector embeddings for semantic search
  * - Auto-detects sqlite-vec for native vector ops
+ * - Hot memory priority: checks .hot_memory.md first
  * 
  * Usage:
  *   node smart_memory.js --sync
  *   node smart_memory.js --search "query" [--max-results 5]
  *   node smart_memory.js --status
+ *   node smart_memory.js --hot          # Read hot memory only
  */
 
 import fs from 'fs';
@@ -24,6 +26,7 @@ import { getEmbedding, getEmbeddingDimension } from './embed.js';
 import { hybridSearch, vectorSearch, textSearch } from './search.js';
 import { getSearchMode, enableFocus, disableFocus, getModeStatus } from './memory_mode.js';
 import { focusSearch, shouldSuggestFocus } from './focus_agent.js';
+import { readHotMemory, searchHotMemory } from './hot_memory.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,7 +125,20 @@ async function syncAll() {
 /**
  * Search memory (fast mode - direct vector similarity)
  */
-async function performSearchFast(query, maxResults = 5) {
+async function performSearchFast(query, maxResults = 5, includeHot = true) {
+    const output = {
+        query,
+        mode: 'fast',
+    };
+    
+    // Check hot memory first if requested
+    if (includeHot) {
+        const hotResults = searchHotMemory(query);
+        if (hotResults.found) {
+            output.hotMemory = hotResults;
+        }
+    }
+    
     const db = initDatabase(DB_PATH);
     
     console.error(`[Fast Mode] Searching: "${query}"\n`);
@@ -134,17 +150,13 @@ async function performSearchFast(query, maxResults = 5) {
     const results = hybridSearch(db, query, queryEmbedding, { maxResults });
     
     // Format output
-    const output = {
-        query,
-        mode: 'fast',
-        results: results.map(r => ({
-            path: r.path,
-            from: r.startLine,
-            lines: r.endLine - r.startLine + 1,
-            score: Math.round(r.hybridScore * 100) / 100,
-            snippet: r.content.slice(0, 500) + (r.content.length > 500 ? '...' : ''),
-        })),
-    };
+    output.results = results.map(r => ({
+        path: r.path,
+        from: r.startLine,
+        lines: r.endLine - r.startLine + 1,
+        score: Math.round(r.hybridScore * 100) / 100,
+        snippet: r.content.slice(0, 500) + (r.content.length > 500 ? '...' : ''),
+    }));
     
     console.log(JSON.stringify(output, null, 2));
     
@@ -154,18 +166,27 @@ async function performSearchFast(query, maxResults = 5) {
 /**
  * Search memory (focus mode - curated retrieval)
  */
-async function performSearchFocus(query, maxResults = 5) {
-    const result = await focusSearch(query, { selectionCount: maxResults });
-    
-    // Wrap in consistent output format
+async function performSearchFocus(query, maxResults = 5, includeHot = true) {
     const output = {
         query,
         mode: 'focus',
-        confidence: result.confidence,
-        sources: result.sources,
-        synthesis: result.synthesis,
-        facts: result.facts,
     };
+    
+    // Check hot memory first if requested
+    if (includeHot) {
+        const hotResults = searchHotMemory(query);
+        if (hotResults.found) {
+            output.hotMemory = hotResults;
+        }
+    }
+    
+    const result = await focusSearch(query, { selectionCount: maxResults });
+    
+    // Combine results
+    output.confidence = result.confidence;
+    output.sources = result.sources;
+    output.synthesis = result.synthesis;
+    output.facts = result.facts;
     
     console.log(JSON.stringify(output, null, 2));
 }
@@ -173,13 +194,13 @@ async function performSearchFocus(query, maxResults = 5) {
 /**
  * Search memory (auto-detect mode based on current setting)
  */
-async function performSearch(query, maxResults = 5, forceMode = null) {
+async function performSearch(query, maxResults = 5, forceMode = null, includeHot = true) {
     const mode = forceMode || getSearchMode();
     
     if (mode === 'focus') {
-        await performSearchFocus(query, maxResults);
+        await performSearchFocus(query, maxResults, includeHot);
     } else {
-        await performSearchFast(query, maxResults);
+        await performSearchFast(query, maxResults, includeHot);
     }
 }
 
@@ -191,6 +212,9 @@ function showStatus() {
     const stats = getStats(db);
     const mode = getSearchMode();
     
+    // Also check hot memory
+    const hotMemory = readHotMemory();
+    
     const output = {
         status: 'ok',
         database: DB_PATH,
@@ -200,11 +224,33 @@ function showStatus() {
         chunks: stats.chunkCount,
         lastSync: stats.lastSync,
         searchMode: mode,
+        hotMemory: hotMemory.found ? {
+            lastUpdated: hotMemory.lastUpdated,
+            hasActiveProject: !!hotMemory.data?.activeProject,
+            hasRecentDecisions: (hotMemory.data?.recentDecisions?.length || 0) > 0,
+        } : null,
     };
     
     console.log(JSON.stringify(output, null, 2));
     
     db.close();
+}
+
+/**
+ * Read hot memory
+ */
+function showHotMemory() {
+    const hotMemory = readHotMemory();
+    
+    if (!hotMemory.found) {
+        console.log(JSON.stringify({
+            found: false,
+            message: 'No .hot_memory.md file found',
+        }, null, 2));
+        return;
+    }
+    
+    console.log(JSON.stringify(hotMemory, null, 2));
 }
 
 /**
@@ -222,7 +268,7 @@ async function main() {
         case '--search': {
             const query = args[1];
             if (!query) {
-                console.error('Usage: --search "query" [--max-results N] [--focus]');
+                console.error('Usage: --search "query" [--max-results N] [--focus] [--no-hot]');
                 process.exit(1);
             }
             
@@ -233,17 +279,22 @@ async function main() {
             
             const forceFocus = args.includes('--focus');
             const forceFast = args.includes('--fast');
+            const noHot = args.includes('--no-hot');
             
             let forceMode = null;
             if (forceFocus) forceMode = 'focus';
             if (forceFast) forceMode = 'fast';
             
-            await performSearch(query, maxResults, forceMode);
+            await performSearch(query, maxResults, forceMode, !noHot);
             break;
         }
             
         case '--status':
             showStatus();
+            break;
+            
+        case '--hot':
+            showHotMemory();
             break;
             
         case '--focus': {
@@ -269,17 +320,21 @@ async function main() {
             
         default:
             console.log(`
-Smart Memory v2.0 - Hybrid Search with SQLite + Focus Agent
+Smart Memory v2.1 - Hybrid Search with SQLite + Focus Agent
 
 Usage:
   node smart_memory.js --sync
     Index all memory files (MEMORY.md + memory/*.md)
 
-  node smart_memory.js --search "query" [--max-results N] [--focus|--fast]
+  node smart_memory.js --search "query" [--max-results N] [--focus|--fast] [--no-hot]
     Search memory using current mode (or override with --focus/--fast)
+    Checks .hot_memory.md first, then vector search (use --no-hot to skip)
 
   node smart_memory.js --status
-    Show database statistics and current mode
+    Show database statistics, current mode, and hot memory status
+
+  node smart_memory.js --hot
+    Read .hot_memory.md directly (working memory)
 
   node smart_memory.js --focus
     Enable Focus Mode (curated retrieval)
@@ -292,14 +347,15 @@ Usage:
 
 Modes:
   fast (default)
-    Direct vector similarity search
+    Direct vector similarity search + hot memory check
     Quick, efficient for simple lookups
     
   focus
-    Multi-pass curation via Focus Agent:
-      1. Retrieve 20+ chunks
-      2. Rank by weighted relevance
-      3. Synthesize into coherent narrative
+    Multi-pass curation via Focus Agent + hot memory check:
+      1. Check .hot_memory.md for active context
+      2. Retrieve 20+ chunks via vector search
+      3. Rank by weighted relevance
+      4. Synthesize into coherent narrative
     Higher quality for complex decisions
 
 Environment:
@@ -312,10 +368,5 @@ Environment:
 
 main().catch(err => {
     console.error('Error:', err.message);
-    if (err.message.includes('better-sqlite3')) {
-        console.error('\nSQLite is required. Install with:');
-        console.error('  Ubuntu/Debian: sudo apt-get install sqlite3 libsqlite3-dev');
-        console.error('  macOS: brew install sqlite3');
-    }
     process.exit(1);
 });
