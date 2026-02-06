@@ -122,16 +122,36 @@ export async function memorySearch(query, maxResults = 5) {
 
 /**
  * Get full content from a memory file
+ * SECURE: Prevents path traversal by resolving and validating path
  */
 export function memoryGet(filePath, from, lines) {
     try {
-        const fullPath = path.join(WORKSPACE, filePath);
+        // Resolve to absolute path and normalize
+        const requestedPath = path.resolve(WORKSPACE, filePath);
+        const workspaceRoot = path.resolve(WORKSPACE);
         
-        if (!fs.existsSync(fullPath)) {
+        // SECURITY: Ensure the resolved path is within the workspace
+        if (!requestedPath.startsWith(workspaceRoot)) {
+            console.error('Security: Path traversal attempt blocked:', filePath);
             return null;
         }
         
-        const content = fs.readFileSync(fullPath, 'utf-8');
+        // Only allow .md files from memory/ or MEMORY.md
+        const relativePath = path.relative(workspaceRoot, requestedPath);
+        const isAllowed = relativePath === 'MEMORY.md' || 
+                          relativePath.startsWith('memory/') ||
+                          relativePath.startsWith('.hot_memory.md');
+        
+        if (!isAllowed) {
+            console.error('Security: Path outside allowed memory directories:', filePath);
+            return null;
+        }
+        
+        if (!fs.existsSync(requestedPath)) {
+            return null;
+        }
+        
+        const content = fs.readFileSync(requestedPath, 'utf-8');
         const allLines = content.split('\n');
         const slice = allLines.slice(from - 1, from - 1 + lines);
         

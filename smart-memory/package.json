@@ -1,6 +1,6 @@
 {
   "name": "smart-memory",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Smart memory with SQLite backend and hybrid search (FTS5 + vectors)",
   "type": "module",
   "main": "smart_memory.js",

@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.2] - 2026-02-06
+
+### Security
+- **CRITICAL**: Fixed path traversal vulnerabilities in multiple files:
+  - `memory.js`: `memoryGet()` function
+  - `vector_memory_local.js`: `getFullContent()` function
+- Added path resolution validation to ensure all file access stays within workspace
+- Added allowlist check to restrict access to `MEMORY.md`, `memory/*.md`, and `.hot_memory.md` only
+- Blocks attempts like `../../../etc/passwd` or nested traversal patterns
+
 ## [2.1.1] - 2026-02-05
 
 ### Added
