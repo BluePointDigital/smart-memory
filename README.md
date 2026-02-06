@@ -1,122 +1,162 @@
-# Vector Memory for OpenClaw
+# Smart Memory for OpenClaw
 
-**Zero-configuration smart memory search**. Automatically uses neural embeddings when available, falls back to built-in search otherwise.
+**Context-aware memory system with dual retrieval modes** — fast vector search when you need speed, curated Focus Agent when you need depth.
 
 ```bash
 # Install and it just works
-npx clawhub install vector-memory
+npx clawhub install smart-memory
 
 # Optional: sync for better quality
-node vector-memory/smart_memory.js --sync
+node smart-memory/smart_memory.js --sync
 ```
 
 ## ✨ The Magic
 
-**Same function call. Automatic best method.**
+**Same function call. Two modes. You choose.**
 
 ```javascript
-// This automatically does the right thing
+// Fast mode (default): Direct vector search
 memory_search("User principles values")
 
-// If vector synced: finds "autonomy, competence, creation" (semantic!)
-// If not synced: uses keyword search (fallback)
+// Focus mode: Multi-pass curation for complex decisions
+memory_mode('focus')
+memory_search("What did we decide about the architecture?")
 ```
 
-No configuration. No manual switching. No broken workflows.
+| Mode | Best For | How It Works |
+|------|----------|--------------|
+| **Fast** | Quick lookups, facts | Direct vector similarity (~10ms) |
+| **Focus** | Decisions, synthesis | Retrieve → Rank → Synthesize (~100ms) |
 
 ## 🚀 Quick Start
 
 ### From ClawHub (Recommended)
 ```bash
-npx clawhub install vector-memory
+npx clawhub install smart-memory
 ```
-Done. `memory_search` now has smart fallback.
+Done. `memory_search` now works with automatic mode selection.
 
 ### From GitHub
 ```bash
-curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/vector-memory-openclaw/main/install.sh | bash
+curl -sL https://raw.githubusercontent.com/BluePointDigital/smart-memory/main/install.sh | bash
 ```
 
 ### Manual
 ```bash
-git clone https://github.com/YOUR_USERNAME/vector-memory-openclaw.git
-cd vector-memory-openclaw/vector-memory && npm install
+git clone https://github.com/BluePointDigital/smart-memory.git
+cd smart-memory/smart-memory && npm install
 ```
 
 ## 🎯 How It Works
+
+### Dual Retrieval Modes
 
 ```
 User searches
       │
       ▼
 ┌─────────────┐
-│ Vector ready?│
+│  Fast Mode? │
 └──────┬──────┘
-   Yes │    │ No
+   Yes │    │ No (Focus Mode)
       ▼     ▼
-┌────────┐ ┌──────────┐
-│ Neural │ │ Keyword  │
-│ Search │ │ Search   │
-│ (best) │ │ (fast)   │
-└────┬───┘ └────┬─────┘
-     │          │
-     └────┬─────┘
-          ▼
-    ┌────────────┐
-    │  Results   │
-    └────────────┘
+┌────────┐ ┌─────────────┐
+│ Vector │ │ Retrieve 20+│
+│ Search │ │ chunks      │
+└────┬───┘ └──────┬──────┘
+     │            ▼
+     │     ┌─────────────┐
+     │     │ Rank &      │
+     │     │ Synthesize  │
+     │     └──────┬──────┘
+     │            ▼
+     │     ┌─────────────┐
+     │     │ Curated     │
+     │     │ Narrative   │
+     └─────┴──────┬──────┘
+                  ▼
+           ┌────────────┐
+           │  Results   │
+           └────────────┘
 ```
 
-**Zero config philosophy:**
-1. Install → Works immediately (built-in fallback)
-2. Sync → Gets better (vector embeddings)
-3. Use → Always best available
+### Zero Config Philosophy
+1. **Install** → Works immediately (built-in fallback)
+2. **Sync** → Gets better (vector embeddings)
+3. **Choose mode** → Fast for speed, Focus for depth
+4. **Use** → Always best available
+
+## 🎛️ Toggle Modes
+
+```bash
+# Enable Focus mode (curated retrieval)
+node smart-memory/smart_memory.js --focus
+
+# Disable Focus mode (back to fast)
+node smart-memory/smart_memory.js --unfocus
+
+# Check current mode
+node smart-memory/smart_memory.js --mode
+```
 
 ## 📊 Before & After
 
-| Query | Without Skill | With Skill (Default) | With Skill (Synced) |
-|-------|--------------|---------------------|---------------------|
-| "User collaboration style" | ⚠️ Weak | ✅ Better | ✅ "work with me, not just for me" |
-| "Agent origin" | ⚠️ Weak | ✅ Better | ✅ "Agent to Agent transfer" |
-| "values beliefs" | ⚠️ Literal | ✅ Improved | ✅ Semantic match |
+| Query | Without Skill | With Skill (Fast) | With Skill (Focus) |
+|-------|--------------|-------------------|-------------------|
+| "User collaboration style" | ⚠️ Weak | ✅ Better | ✅ "work with me, not just for me" + context |
+| "What did we decide?" | ⚠️ Scattered | ✅ Related chunks | ✅ Synthesized decision narrative |
+| "Compare options A and B" | ⚠️ Manual work | ✅ Related hits | ✅ Structured comparison with sources |
 
 ## 🛠️ Usage
 
 ### In OpenClaw
-Just use `memory_search`:
+
 ```javascript
-const results = await memory_search("what we discussed", 5);
-// Automatically uses best available method
+// Fast search (default)
+const results = await memory_search("deployment config", 5);
+
+// Enable focus for complex queries
+memory_mode('focus');
+const deepResults = await memory_search("architecture decisions", 5);
+// Returns: { synthesis, facts, sources, confidence }
 ```
 
 ### CLI
+
 ```bash
-# Search (auto-selects method)
-node vector-memory/smart_memory.js --search "your query"
+# Search (uses current mode)
+node smart-memory/smart_memory.js --search "your query"
 
-# Check what's active
-node vector-memory/smart_memory.js --status
+# Search with mode override
+node smart-memory/smart_memory.js --search "your query" --focus
+node smart-memory/smart_memory.js --search "your query" --fast
 
-# Sync for better quality
-node vector-memory/smart_memory.js --sync
+# Toggle modes
+node smart-memory/smart_memory.js --focus      # Enable focus
+node smart-memory/smart_memory.js --unfocus    # Disable focus
+
+# Check status
+node smart-memory/smart_memory.js --status
 ```
 
 ## 📁 What's Included
 
 ```
-vector-memory/
-├── smart_memory.js           ← Main entry (auto-selects)
-├── vector_memory_local.js    ← Neural embeddings
-├── memory.js                 ← OpenClaw wrapper
-├── package.json              ← Dependencies
+smart-memory/
+├── smart_memory.js        ← Main entry (auto-selects mode)
+├── focus_agent.js         ← Curated retrieval engine
+├── memory_mode.js         ← Mode toggle commands
+├── db.js                  ← SQLite + hybrid search
+├── memory.js              ← OpenClaw wrapper
+├── package.json           ← Dependencies
 └── references/
-    ├── integration.md        ← Setup guide
-    └── pgvector.md          ← Scale guide
+    ├── integration.md     ← Setup guide
+    └── pgvector.md        ← Scale guide
 
 skills/
-└── vector-memory/
-    ├── skill.json            ← OpenClaw manifest
-    └── README.md             ← Skill docs
+└── vector-memory/         ← OpenClaw skill manifest
+    ├── skill.json
+    └── README.md
 ```
 
 ## 🔧 Requirements
@@ -129,26 +169,27 @@ skills/
 
 | Tool | Purpose |
 |------|---------|
-| `memory_search` | Smart search with auto-fallback |
+| `memory_search` | Smart search with mode awareness |
 | `memory_get` | Retrieve full content |
 | `memory_sync` | Index for vector search |
-| `memory_status` | Check which method is active |
+| `memory_mode` | Toggle fast/focus modes |
+| `memory_status` | Check mode and database stats |
 
 ## 🔄 Auto-Sync (Optional)
 
 Add to `HEARTBEAT.md`:
 ```bash
-if [ -n "$(find memory MEMORY.md -newer vector-memory/.last_sync 2>/dev/null)" ]; then
-    node vector-memory/smart_memory.js --sync && touch vector-memory/.last_sync
+if [ -n "$(find memory MEMORY.md -newer smart-memory/.last_sync 2>/dev/null)" ]; then
+    node smart-memory/smart_memory.js --sync && touch smart-memory/.last_sync
 fi
 ```
 
 ## 📈 Performance
 
-| Method | Quality | Speed | When Used |
-|--------|---------|-------|-----------|
-| Vector | ⭐⭐⭐⭐⭐ | ~100ms | After sync |
-| Built-in | ⭐⭐⭐ | ~10ms | Fallback / Before sync |
+| Mode | Quality | Speed | Best For |
+|------|---------|-------|----------|
+| Fast | ⭐⭐⭐⭐ | ~10ms | Quick lookups, facts |
+| Focus | ⭐⭐⭐⭐⭐ | ~100ms | Decisions, synthesis, planning |
 
 ## 🐛 Troubleshooting
 
@@ -157,16 +198,16 @@ fi
 | **"Vector not ready"** | Run: `node smart_memory.js --sync` |
 | **No results found** | Check that MEMORY.md exists; try broader query |
 | **First sync slow** | Normal - downloading ~80MB model; subsequent syncs fast |
-| **Low quality results** | Sync again after editing memory files |
+| **Focus mode too slow** | Switch to fast: `node smart_memory.js --unfocus` |
 | **Want pure built-in?** | Don't sync - built-in always available as fallback |
 
 ## 🧪 Verify Installation
 
 ```bash
-node vector-memory/smart_memory.js --test
+node smart-memory/smart_memory.js --status
 ```
 
-Checks: dependencies, vector index, search functionality, memory files.
+Checks: dependencies, vector index, search functionality, memory files, current mode.
 
 ## 📋 For Agent Developers
 
@@ -176,7 +217,8 @@ Add to your `AGENTS.md`:
 Before answering about prior work, decisions, preferences:
 1. Run memory_search with relevant query
 2. Use memory_get for full context
-3. If low confidence, say you checked
+3. Enable focus mode for complex decisions: memory_mode('focus')
+4. If low confidence, say you checked
 ```
 
 See full template in `AGENTS.md`.
@@ -195,9 +237,11 @@ workspace/
 
 See `MEMORY_STRUCTURE.md` for templates.
 
-## 🤝 Contributing
+## 🔗 Links
 
-PRs welcome! See `CONTRIBUTING.md` (create one if needed).
+- **GitHub**: https://github.com/BluePointDigital/smart-memory
+- **ClawHub**: https://clawhub.ai/BluePointDigital/smart-memory
+- **Issues**: https://github.com/BluePointDigital/smart-memory/issues
 
 ## 📜 License
 
@@ -207,4 +251,4 @@ MIT
 
 - Embeddings: [Xenova Transformers](https://github.com/xenova/transformers.js)
 - Model: `sentence-transformers/all-MiniLM-L6-v2`
-- Inspired by OpenClaw's memory system
+- Inspired by OpenClaw's memory system and Cognee's knowledge graphs

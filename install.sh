@@ -1,10 +1,10 @@
 #!/bin/bash
-# One-line installer for Vector Memory
-# Usage: curl -sL https://raw.githubusercontent.com/YOUR_USERNAME/vector-memory-openclaw/main/install.sh | bash
+# One-line installer for Smart Memory
+# Usage: curl -sL https://raw.githubusercontent.com/BluePointDigital/smart-memory/main/install.sh | bash
 
 set -e
 
-echo "🧠 Installing Vector Memory for OpenClaw..."
+echo "🧠 Installing Smart Memory for OpenClaw..."
 echo ""
 
 # Detect OpenClaw workspace
@@ -37,26 +37,26 @@ echo "✅ Node.js $(node --version) found"
 echo ""
 
 # Clone or download
-echo "📥 Downloading Vector Memory..."
-REPO_URL="https://github.com/YOUR_USERNAME/vector-memory-openclaw"
+echo "📥 Downloading Smart Memory..."
+REPO_URL="https://github.com/BluePointDigital/smart-memory"
 
 if command -v git &> /dev/null; then
     # Git available - clone
     cd /tmp
-    rm -rf vector-memory-temp 2>/dev/null || true
-    git clone --depth 1 "$REPO_URL.git" vector-memory-temp
+    rm -rf smart-memory-temp 2>/dev/null || true
+    git clone --depth 1 "$REPO_URL.git" smart-memory-temp
     
     # Copy files
-    cp -r vector-memory-temp/skills/vector-memory "$WORKSPACE/skills/"
-    cp -r vector-memory-temp/vector-memory "$WORKSPACE/"
-    rm -rf vector-memory-temp
+    cp -r smart-memory-temp/skills/vector-memory "$WORKSPACE/skills/"
+    cp -r smart-memory-temp/smart-memory "$WORKSPACE/"
+    rm -rf smart-memory-temp
 else
     # No git - download tarball
     cd /tmp
     curl -L "$REPO_URL/archive/main.tar.gz" | tar xz
-    cp -r vector-memory-openclaw-main/skills/vector-memory "$WORKSPACE/skills/"
-    cp -r vector-memory-openclaw-main/vector-memory "$WORKSPACE/"
-    rm -rf vector-memory-openclaw-main
+    cp -r smart-memory-main/skills/vector-memory "$WORKSPACE/skills/"
+    cp -r smart-memory-main/smart-memory "$WORKSPACE/"
+    rm -rf smart-memory-main
 fi
 
 echo "✅ Files installed"
@@ -64,7 +64,7 @@ echo ""
 
 # Install dependencies
 echo "📦 Installing dependencies..."
-cd "$WORKSPACE/vector-memory"
+cd "$WORKSPACE/smart-memory"
 npm install --silent
 
 echo "✅ Dependencies installed"
@@ -72,13 +72,15 @@ echo ""
 
 # Initial sync
 echo "🔄 Indexing memory files..."
-node vector_memory_local.js --sync
+node smart_memory.js --sync
 
 echo ""
 echo "🎉 Installation complete!"
 echo ""
 echo "Quick test:"
-echo "  node vector-memory/vector_memory_local.js --search 'test query'"
+echo "  node smart-memory/smart_memory.js --search 'test query'"
 echo ""
-echo "To use in OpenClaw, the skill is already configured."
-echo "The memory_search tool now uses vector embeddings!"
+echo "To use Focus Mode:"
+echo "  node smart-memory/smart_memory.js --focus"
+echo ""
+echo "The memory_search tool now uses Smart Memory with dual retrieval modes!"

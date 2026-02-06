@@ -1,9 +1,9 @@
 ---
-name: vector-memory
-description: Smart memory with hybrid search (BM25 + vectors) and Focus Agent for curated retrieval. SQLite backend, zero configuration, local embeddings.
+name: smart-memory
+description: Context-aware memory for AI agents with dual retrieval modes — fast vector search or curated Focus Agent synthesis. SQLite backend, zero configuration, local embeddings.
 ---
 
-# Vector Memory v2.1 - Focus Agent Edition
+# Smart Memory v2.1 - Focus Agent Edition
 
 **Drop-in replacement for OpenClaw's memory system** with superior search quality and optional curated retrieval via Focus Agent.
 
@@ -20,30 +20,32 @@ description: Smart memory with hybrid search (BM25 + vectors) and Focus Agent fo
 ## Installation
 
 ```bash
-npx clawhub install vector-memory
+npx clawhub install smart-memory
 ```
+
+Or from ClawHub: https://clawhub.ai/BluePointDigital/smart-memory
 
 ## Quick Start
 
 ### 1. Sync Memory
 ```bash
-node vector-memory/smart_memory.js --sync
+node smart-memory/smart_memory.js --sync
 ```
 
 ### 2. Search (Fast Mode - Default)
 ```bash
-node vector-memory/smart_memory.js --search "James values principles"
+node smart-memory/smart_memory.js --search "James values principles"
 ```
 
 ### 3. Enable Focus Mode (Curated Retrieval)
 ```bash
-node vector-memory/smart_memory.js --focus
-node vector-memory/smart_memory.js --search "complex decision about project direction"
+node smart-memory/smart_memory.js --focus
+node smart-memory/smart_memory.js --search "complex decision about project direction"
 ```
 
 ### 4. Disable Focus Mode
 ```bash
-node vector-memory/smart_memory.js --unfocus
+node smart-memory/smart_memory.js --unfocus
 ```
 
 ## Search Modes
@@ -55,7 +57,7 @@ Direct vector similarity search. Best for:
 - Routine queries
 
 ```bash
-node vector_memory.js --search "git remote"
+node smart-memory/smart_memory.js --search "git remote"
 ```
 
 ### Focus Mode (Curated)
@@ -66,8 +68,8 @@ Multi-pass curation via Focus Agent. Best for:
 - Comparing options
 
 ```bash
-node vector_memory.js --focus
-node vector_memory.js --search "What did we decide about BluePointDigital architecture?"
+node smart-memory/smart_memory.js --focus
+node smart-memory/smart_memory.js --search "What did we decide about BluePointDigital architecture?"
 ```
 
 **How Focus Mode Works:**
@@ -252,7 +254,7 @@ Without it: Works fine, just slower on large databases.
 ## File Structure
 
 ```
-vector-memory/
+smart-memory/
 ├── smart_memory.js      # Main CLI
 ├── focus_agent.js       # Curated retrieval engine
 ├── memory_mode.js       # Mode toggle commands
