@@ -3,8 +3,9 @@
   "version": "2.1.2",
   "description": "Smart memory with SQLite backend and hybrid search (FTS5 + vectors)",
   "type": "module",
-  "main": "smart_memory.js",
+  "main": "index.js",
   "scripts": {
+    "postinstall": "node postinstall.js",
     "sync": "node smart_memory.js --sync",
     "search": "node smart_memory.js --search",
     "status": "node smart_memory.js --status"
