@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.3.0] - 2026-03-05
+
+### Added (Hot Memory Extension)
+- **Persistent Working Context**: New optional extension for maintaining active projects, working questions, and top-of-mind items across sessions
+  - `hot_memory_manager.py`: Core persistence with JSON storage
+  - `memory_adapter.py`: API wrapper for seamless `/compose` integration
+  - `smem-hook.sh`: Shell hook for post-conversation updates
+- **Auto-Detection**: Automatically identifies project mentions and questions from conversation content
+  - Keyword-based project detection (Tappy.Menu, Content Foundry, etc.)
+  - Question extraction (any message containing `?`)
+  - Working context updates on every interaction
+- **Intelligent Duplicate Prevention**: Prevents duplicate project entries by matching on project keys rather than full descriptions
+  - Extracts keys from "Project Name - Description" format
+  - Normalized comparison prevents false duplicates
+- **Live Insight Integration**: Fetches pending insights from `/insights/pending` and includes them in composed prompts
+- **Full Documentation**: `HOT_MEMORY_EXTENSION.md` with usage guide and API reference
+
+### Changed
+- Extended memory architecture to support session-surviving working context
+- Hot memory appears in `[WORKING CONTEXT]` section of composed prompts
+- Token budget allocates ~400 tokens for working memory by default
+
+---
+
 ## [2.2.0] - 2026-03-05
 
 ### Added

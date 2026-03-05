@@ -238,6 +238,48 @@ await memory.stop();
 
 ---
 
+## Hot Memory Extension (Optional)
+
+The **Hot Memory Extension** provides persistent working context that survives between sessions and automatically appears in every prompt's `[WORKING CONTEXT]` section.
+
+### What It Adds
+
+| Feature | Description |
+|---------|-------------|
+| **Active Projects** | Top 5 current projects with auto-detection from conversation |
+| **Working Questions** | Open questions being explored (auto-captured from queries) |
+| **Top of Mind** | Immediate priorities and notes |
+| **Live Insights** | Pending insights from background cognition |
+| **Auto-Update** | Detects project mentions and questions automatically |
+
+### Quick Start
+
+```bash
+# Initialize with current context
+python3 hot_memory_manager.py init
+
+# After conversations, update hot memory
+./smem-hook.sh "user message" "assistant response"
+
+# Compose with hot memory auto-included
+python3 memory_adapter.py compose -m "What should I work on?"
+```
+
+### Files
+
+- `hot_memory_manager.py` - Core persistence and auto-update logic
+- `memory_adapter.py` - API wrapper with hot memory integration
+- `smem-hook.sh` - Post-conversation shell hook
+- `hot_memory_state.json` - Persistent storage (auto-created)
+
+### Duplicate Prevention
+
+The extension includes intelligent duplicate prevention that matches projects by key (e.g., "Tappy.Menu") rather than full description, preventing duplicates when project descriptions evolve.
+
+See `HOT_MEMORY_EXTENSION.md` for full documentation.
+
+---
+
 ## API Surface
 
 ### JavaScript Adapter Methods
