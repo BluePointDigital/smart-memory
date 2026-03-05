@@ -44,118 +44,55 @@ Smart Memory v2 is designed as a **cognitive pipeline**:
 
 ```mermaid
 flowchart LR
-  A["OpenClaw Runtime (Node.js)"] --> B["smart-memory/index.js\nAdapter + lifecycle manager"]
-  B --> C["FastAPI server.py\nPersistent local API"]
-  C --> D["CognitiveMemorySystem"]
-  D --> E["ingestion/"]
-  D --> F["retrieval/"]
-  D --> G["hot_memory/"]
-  D --> H["cognition/"]
-  D --> I["prompt_engine/"]
-  D --> J["storage/ + embeddings/ + entities/"]
+  OC["OpenClaw Runtime"] --> AD["Node Adapter smart-memory/index.js"]
+  AD --> API["FastAPI Server server.py"]
+  API --> SYS["CognitiveMemorySystem"]
+  SYS --> ING["Ingestion Pipeline"]
+  SYS --> RET["Retrieval Pipeline"]
+  SYS --> HOT["Hot Memory Manager"]
+  SYS --> COG["Background Cognition"]
+  SYS --> PRM["Prompt Engine"]
+  SYS --> STO["Storage and Embeddings"]
 ```
 
-### Request Flow
+### Cognitive Request Flow
 
 ```mermaid
 flowchart TD
-  U["User Message"] --> ING["/ingest\nHeuristic filter -> scoring -> classification -> semantic dedup"]
-  U --> RET["/retrieve\nEntity bias -> vector search -> rerank -> access tracking"]
-  RET --> COM["/compose\nIdentity + temporal + hot memory + selected LTM + history"]
-  BG["/run_background"] --> COG["Reflection + consolidation + decay + belief conflict resolution"]
+  UM["User Message"] --> ING["Ingest Interaction"]
+  UM --> RET["Retrieve Relevant Memory"]
+  RET --> COM["Compose Prompt Context"]
+  BG["Background Trigger"] --> RUN["Run Cognition Cycle"]
+  RUN --> UPD["Update Insights and Memory State"]
+  UPD --> COM
 ```
 
 ---
 
-## Phase 8 Production Polish
+## System Overview
 
-### CPU-Only Standard (mandatory)
-- CPU-only PyTorch is required in v2.
-- GPU/CUDA PyTorch builds are intentionally unsupported.
-- Install explicitly forces CPU wheels:
-- `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu`
-- `requirements-cognitive.txt` includes `einops>=0.8.0` for Nomic compatibility.
+### Runtime
+- Persistent local FastAPI process keeps the embedder and stores warm.
+- Node adapter manages process lifecycle and exposes a simple JS interface.
+- OpenClaw v2.5 skill layer adds active memory tools and lifecycle hooks.
 
-### Strict Token Enforcement
-`max_prompt_tokens` is now hard-enforced at render time. If over budget, eviction happens in this exact order:
-1. Oldest conversation history
-2. Lower-ranked retrieved memories
-3. Insight queue items
-4. Working memory
-5. Temporal state
-6. Agent identity (never evicted)
+### Memory Quality Controls
+- Strict prompt token enforcement with deterministic eviction order.
+- Semantic dedup in ingestion to reinforce instead of duplicating.
+- Retrieval access tracking updates `last_accessed` and `access_count`.
+- Belief conflict resolution merges contradictory beliefs by shared entities and opposing stance.
 
-### Access Tracking Fixed
-Selected retrieval memories now persist:
-- `last_accessed = now()`
-- `access_count += 1`
-
-### Semantic Dedup in Ingestion
-Before creating a new memory:
-- Embed candidate content
-- Search top-1 nearest vector
-- If cosine similarity `> 0.85`, skip new memory creation and reinforce existing memory:
-- update `last_accessed`
-- increment `access_count`
-- increment `reinforced_count` for belief memories
-
-### Conflict Resolver Thresholds Relaxed
-Belief conflicts are now flagged when:
-- beliefs share at least one entity
-- and stances or sentiment are opposing
-
-### Observability Endpoints
-- `GET /health` includes embedder-loaded status and model/backend metadata
-- `GET /memories?type=` lists memory objects (optional type filter)
-- `GET /memory/{memory_id}` fetches one memory object
-- `GET /insights/pending` inspects pending hot-memory insights
-
-### Prompt Compose Input Improvement
-`hot_memory` is optional in `PromptComposerRequest`; a safe default object is used when omitted.
-
----
-
-## Feature Highlights
-
-### Hybrid Node + Python Design
-- OpenClaw stays in Node.
-- Heavy cognitive operations run in Python.
-- `index.js` is a thin adapter that talks HTTP to `localhost:8000`.
-
-### Cold-Start Prevention
-- The adapter launches `uvicorn` once and keeps it alive.
-- Nomic embeddings and storage connections remain warm between calls.
-
-### REM-Style Background Cognition
-Periodic background cycle handles:
-- reflection + associative insights
-- memory consolidation
-- decay + vector pruning
-- belief conflict resolution
-
-### Curiosity Triggers
-Associative insight generation computes curiosity from emotional intensity and familiarity.
-High-curiosity memories can become proactive working questions.
-
-### Schema-First Memory Objects
-- JSON documents validated with Pydantic.
-- Schema versioning + entity IDs + relations + emotional metadata.
-
+### Reliability and Observability
+- CPU-only PyTorch is mandatory for lightweight, consistent installs.
+- Health and observability endpoints: `/health`, `/memories`, `/memory/{id}`, `/insights/pending`.
+- Retry queue + heartbeat support in the OpenClaw skill for resilient commit behavior.
 
 ### OpenClaw Native Skill (v2.5)
-- New modular skill package: `skills/smart-memory-v25/`
-- Active tools:
-  - `memory_search`
-  - `memory_commit`
-  - `memory_insights`
-- Built-in reliability:
-  - mandatory `/health` gate
-  - `.memory_retry_queue.json` for offline commit retries
-  - automatic queue flush on successful heartbeat/tool calls
-- Lifecycle hooks:
-  - session arc checkpoint every 20 turns
-  - session-end episodic arc capture
-- Passive prompt injection helper emits standardized `[ACTIVE CONTEXT]` blocks for OpenClaw prompts.
+- New modular package: `skills/smart-memory-v25/`.
+- Active tools: `memory_search`, `memory_commit`, `memory_insights`.
+- Session arc capture at checkpoints and session end.
+- Passive `[ACTIVE CONTEXT]` prompt injection for grounded responses.
+
 ---
 
 ## Memory Layers

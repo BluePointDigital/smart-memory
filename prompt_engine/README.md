@@ -1,10 +1,10 @@
-# Prompt Engine (Phase 0 + 1)
+# Prompt Engine
 
-This package contains the cognitive prompt composer foundation described in `ARCHITECTURE.md`.
+This package contains the prompt composition layer used by Smart Memory v2.
 
 ## Included Modules
 
-- `schemas.py`: Canonical Pydantic contracts (Phase 1)
+- `schemas.py`: Canonical Pydantic contracts
 - `state_detector.py`: Interaction-state and temporal-state generation
 - `entity_extractor.py`: Lightweight entity extraction
 - `memory_retriever.py`: Retrieval wrapper with timeout and graceful fallback
@@ -16,4 +16,4 @@ This package contains the cognitive prompt composer foundation described in `ARC
 ## Scope
 
 - Data contracts and orchestration only.
-- No storage engine, vector index, or background scheduler implementation in this phase.
+- No storage engine, vector index, or background scheduler implementation in this package.

@@ -22,6 +22,7 @@
 - Retrieval wrapper now uses compatibility fallback for `/retrieve` payload filters, then applies type/relevance/limit filtering safely client-side.
 - Auto-tag fallback is now extensible via rule definitions (`tagging.js`) and includes default `working_question` + `decision` heuristics.
 - Documentation sweep completed: README now includes `skills/smart-memory-v25` architecture details, and skill docs now enforce CPU-only PyTorch policy with no GPU fallback guidance.
+- README architecture content was consolidated into a whole-system overview, Mermaid flowcharts were simplified for consistent rendering, and obsolete `ARCHITECTURE.md` was removed.
 
 ### Fixed
 - Commit failure behavior now returns explicit operational state feedback to the agent:
