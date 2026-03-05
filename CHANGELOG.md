@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.5.0] - 2026-03-05
+
+### Added
+- New native OpenClaw skill package at `skills/smart-memory-v25/` for the local FastAPI cognitive engine.
+- Three active memory tools:
+  - `memory_search`
+  - `memory_commit`
+  - `memory_insights`
+- Tool-level mandatory health gate (`GET /health`) before execution.
+- Persistent retry queue (`.memory_retry_queue.json`) for failed memory commits when server/embedder is unavailable.
+- Automatic retry queue flush on healthy tool calls and heartbeat.
+- Session arc lifecycle capture:
+  - mid-session checkpoint every 20 turns
+  - session-end episodic capture hook
+- Passive prompt injection middleware for `[ACTIVE CONTEXT]` formatting and pending insight guidance.
+- OpenClaw hook helper (`openclaw-hooks.js`) for turn and teardown integration.
+
+### Changed
+- Memory commit flow now serializes commits to protect local CPU embedding throughput under bursty commit calls.
+- Retrieval wrapper now uses compatibility fallback for `/retrieve` payload filters, then applies type/relevance/limit filtering safely client-side.
+- Auto-tag fallback is now extensible via rule definitions (`tagging.js`) and includes default `working_question` + `decision` heuristics.
+- Documentation sweep completed: README now includes `skills/smart-memory-v25` architecture details, and skill docs now enforce CPU-only PyTorch policy with no GPU fallback guidance.
+
+### Fixed
+- Commit failure behavior now returns explicit operational state feedback to the agent:
+  - `Memory commit failed - server unreachable. Queued for retry.`
+
+---
 ## [2.3.0] - 2026-03-05
 
 ### Added (Hot Memory Extension)

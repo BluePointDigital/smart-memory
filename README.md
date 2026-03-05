@@ -141,6 +141,21 @@ High-curiosity memories can become proactive working questions.
 - JSON documents validated with Pydantic.
 - Schema versioning + entity IDs + relations + emotional metadata.
 
+
+### OpenClaw Native Skill (v2.5)
+- New modular skill package: `skills/smart-memory-v25/`
+- Active tools:
+  - `memory_search`
+  - `memory_commit`
+  - `memory_insights`
+- Built-in reliability:
+  - mandatory `/health` gate
+  - `.memory_retry_queue.json` for offline commit retries
+  - automatic queue flush on successful heartbeat/tool calls
+- Lifecycle hooks:
+  - session arc checkpoint every 20 turns
+  - session-end episodic arc capture
+- Passive prompt injection helper emits standardized `[ACTIVE CONTEXT]` blocks for OpenClaw prompts.
 ---
 
 ## Memory Layers
@@ -170,6 +185,12 @@ High-curiosity memories can become proactive working questions.
 +- storage/
 +- embeddings/
 +- entities/
++- skills/
+   +- smart-memory-v25/
+      +- index.js
+      +- openclaw-hooks.js
+      +- prompt-injection.js
+      +- retry-queue.js
 +- smart-memory/
    +- index.js
    +- postinstall.js
@@ -328,5 +349,3 @@ See `HOT_MEMORY_EXTENSION.md` for full documentation.
 ## License
 
 MIT
-
-
