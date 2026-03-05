@@ -42,6 +42,7 @@ if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; 
 fi
 
 echo "Python found"
+echo "CPU-only PyTorch is mandatory for Smart Memory v2 (GPU/CUDA builds are intentionally unsupported)."
 echo ""
 
 # Download latest repository snapshot
@@ -77,3 +78,5 @@ echo "Installation complete"
 echo ""
 echo "Smart Memory v2 is ready."
 echo "The Node adapter will start the local FastAPI cognitive server automatically when used."
+
+

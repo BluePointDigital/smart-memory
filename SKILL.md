@@ -50,6 +50,12 @@ npm install
 
 `npm install` runs `postinstall.js`, creates `.venv`, installs CPU-only PyTorch, and installs cognitive Python dependencies.
 
+## PyTorch Policy
+
+- Smart Memory v2 supports **CPU-only PyTorch only**.
+- Do not install GPU/CUDA PyTorch builds for this project.
+- Use the bundled installer flow (`npm install` -> `postinstall.js`) so the CPU index URL is always applied.
+
 ## Usage Example
 
 ```js

@@ -76,6 +76,7 @@ function main() {
   }
 
   runCommand(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], 'Upgrading pip');
+  // CPU-only policy: keep torch installs pinned to the CPU index; do not use CUDA/generic torch here.
   runCommand(
     venvPython,
     [

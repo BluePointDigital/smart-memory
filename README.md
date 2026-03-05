@@ -69,8 +69,10 @@ flowchart TD
 
 ## Phase 8 Production Polish
 
-### CPU-Only Standard (lightweight)
-- Install now explicitly forces CPU wheels:
+### CPU-Only Standard (mandatory)
+- CPU-only PyTorch is required in v2.
+- GPU/CUDA PyTorch builds are intentionally unsupported.
+- Install explicitly forces CPU wheels:
 - `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu`
 - `requirements-cognitive.txt` includes `einops>=0.8.0` for Nomic compatibility.
 
@@ -196,10 +198,12 @@ npm install
 `postinstall.js` automatically:
 1. Creates `.venv` at repository root.
 2. Upgrades `pip`.
-3. Installs CPU-only PyTorch wheels.
+3. Installs CPU-only PyTorch wheels (mandatory policy).
 4. Installs `requirements-cognitive.txt` (including FastAPI, sentence-transformers, qdrant-client, einops).
 
 Works on both Windows and Unix path conventions.
+
+Do not install generic GPU/CUDA PyTorch wheels for this project; keep CPU-only for consistency and package size.
 
 ---
 
@@ -282,3 +286,5 @@ await memory.stop();
 ## License
 
 MIT
+
+
