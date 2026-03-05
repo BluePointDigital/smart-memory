@@ -1,289 +1,260 @@
 ---
 name: smart-memory
-description: Context-aware memory for AI agents with dual retrieval modes — fast vector search or curated Focus Agent synthesis. SQLite backend, zero configuration, local embeddings.
+description: A persistent, local cognitive memory system for OpenClaw agents. Features Nomic embeddings, hot working memory, background cognition (REM-style consolidation), and a continuously running FastAPI brain.
 ---
 
-# Smart Memory v2.1 - Focus Agent Edition
+# Smart Memory v2 - Cognitive Memory for OpenClaw
 
-**Drop-in replacement for OpenClaw's memory system** with superior search quality and optional curated retrieval via Focus Agent.
+> **Not a basic RAG cache.** A full cognitive pipeline: ingestion → retrieval → working memory → background cognition → prompt composition.
 
-## Features
+## What It Is
 
-- **Hybrid Search**: Combines FTS5 keyword search (BM25) with semantic vector search
-- **Focus Agent**: Multi-pass curation for complex queries (retrieve → rank → synthesize)
-- **Dual Modes**: Fast (direct) or Focus (curated) — toggle anytime
-- **SQLite Backend**: Single-file database, no external services
-- **100% Local**: Embeddings run locally with Transformers.js (no API keys)
-- **Auto-Optimization**: Uses sqlite-vec when available for native vector ops
-- **Zero Configuration**: Works immediately after install
+Smart Memory v2 is a **persistent, local cognitive engine** for OpenClaw agents. It runs as a continuously-active FastAPI server that keeps embedding models and database connections hot, providing fast, high-quality memory retrieval with actual cognition—not just vector search.
+
+## Key Features
+
+| Feature | What You Get |
+|---------|-------------|
+| **Typed Memory** | Episodic, semantic, belief, and goal memories with schema versioning |
+| **Nomic Embeddings** | Local `nomic-embed-text-v1.5` (768-dim, high quality) |
+| **Hot Working Memory** | Small, high-signal "mind state" for current cognitive focus |
+| **Background Cognition** | REM-style consolidation, decay, reflection, and belief conflict resolution |
+| **Entity-Aware Retrieval** | Vector search + entity biasing + reranking |
+| **Token-Bounded Prompts** | Strict context budgeting with deterministic eviction |
+| **CPU-First** | PyTorch CPU-only by default (~200MB vs ~900MB), no CUDA required |
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  OpenClaw Agent │────▶│  FastAPI Server  │────▶│ CognitiveMemory │
+│   (Node.js)     │     │   (Port 8000)    │     │    System       │
+└─────────────────┘     └──────────────────┘     └────────┬────────┘
+                                                          │
+        ┌──────────┬──────────┬───────────┬───────────────┼───────────┐
+        ▼          ▼          ▼           ▼               ▼           ▼
+   ┌────────┐ ┌────────┐ ┌─────────┐ ┌──────────┐ ┌────────────┐ ┌────────┐
+   │Ingest  │ │Retrieve│ │Hot Mem  │ │Cognition │ │Prompt Eng. │ │Storage │
+   │Pipeline│ │Pipeline│ │Manager  │ │ Engine   │ │  Composer  │ │(Qdrant)│
+   └────────┘ └────────┘ └─────────┘ └──────────┘ └────────────┘ └────────┘
+```
 
 ## Installation
 
+### Prerequisites
+- Python 3.11+
+- Node.js 18+ (for OpenClaw integration)
+
+### Step 1: Clone and Setup
 ```bash
-npx clawhub install smart-memory
+git clone https://github.com/BluePointDigital/smart-memory.git
+cd smart-memory
+
+# Create Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements-cognitive-cpu.txt
 ```
 
-Or from ClawHub: https://clawhub.ai/BluePointDigital/smart-memory
+### Step 2: Start the Server
+```bash
+# Development (foreground)
+python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+
+# Production (background)
+nohup python -m uvicorn server:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
+```
+
+### Step 3: Verify
+```bash
+curl http://127.0.0.1:8000/health
+# {"status":"ok"}
+```
+
+## OpenClaw Integration
+
+Add to your `AGENTS.md` to auto-start on session init:
+
+```bash
+# Start cognitive memory server if not running
+curl -s http://127.0.0.1:8000/health > /dev/null 2>&1 || (
+  cd ~/workspace/smart-memory &&
+  nohup bash -c '. .venv/bin/activate && python -m uvicorn server:app --host 127.0.0.1 --port 8000' > /tmp/smart-memory-server.log 2>&1 &
+)
+```
 
 ## Quick Start
 
-### 1. Sync Memory
+### 1. Ingest a Conversation
 ```bash
-node smart-memory/smart_memory.js --sync
+curl -X POST http://127.0.0.1:8000/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_message": "I started the database migration today.",
+    "assistant_message": "Good. We should track rollback strategy.",
+    "timestamp": "2026-03-05T11:00:00Z"
+  }'
 ```
 
-### 2. Search (Fast Mode - Default)
+### 2. Retrieve Context
 ```bash
-node smart-memory/smart_memory.js --search "James values principles"
+curl -X POST http://127.0.0.1:8000/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_message": "How is the migration going?",
+    "conversation_history": ""
+  }'
 ```
 
-### 3. Enable Focus Mode (Curated Retrieval)
+Returns ranked memories with vector scores and composite relevance scores.
+
+### 3. Compose Prompt Context
 ```bash
-node smart-memory/smart_memory.js --focus
-node smart-memory/smart_memory.js --search "complex decision about project direction"
+curl -X POST http://127.0.0.1:8000/compose \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identity_context": "You are Nyx, a persistent cognitive assistant.",
+    "temporal_context": {"current_time": "2026-03-05T11:30:00Z", "timezone": "America/New_York"},
+    "conversation_history": "User: Hey Nyx. Assistant: Hey James.",
+    "current_message": "What were we working on?"
+  }'
 ```
 
-### 4. Disable Focus Mode
+### 4. Trigger Background Cognition
 ```bash
-node smart-memory/smart_memory.js --unfocus
+curl -X POST http://127.0.0.1:8000/run_background \
+  -H "Content-Type: application/json" \
+  -d '{"scheduled": true}'
 ```
 
-## Search Modes
+## API Endpoints
 
-### Fast Mode (Default)
-Direct vector similarity search. Best for:
-- Simple lookups
-- Quick fact retrieval
-- Routine queries
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Service status |
+| `/health` | GET | Health check |
+| `/ingest` | POST | Ingest an interaction |
+| `/retrieve` | POST | Retrieve relevant memories |
+| `/compose` | POST | Compose bounded prompt context |
+| `/run_background` | POST | Run background cognition cycle |
+
+## Memory Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **episodic** | Events with participants | "User started database migration" |
+| **semantic** | Facts and concepts | "Database migrations should have rollback plans" |
+| **belief** | Learned preferences/patterns | "User prefers local tools over cloud APIs" |
+| **goal** | Active objectives | "Complete migration by Friday" |
+
+## Background Cognition
+
+The `/run_background` endpoint performs REM-style processing:
+
+1. **Reflection** - Generate insights from recent memories
+2. **Consolidation** - Merge redundant memories, reinforce important ones
+3. **Decay** - Reduce importance of old/unaccessed memories
+4. **Conflict Resolution** - Detect and flag contradictory beliefs
+
+Run this periodically (e.g., hourly) to keep memory quality high:
 
 ```bash
-node smart-memory/smart_memory.js --search "git remote"
+# Cron example (every hour)
+0 * * * * curl -X POST http://127.0.0.1:8000/run_background -d '{"scheduled":true}'
 ```
 
-### Focus Mode (Curated)
-Multi-pass curation via Focus Agent. Best for:
-- Complex decisions
-- Multi-fact synthesis
-- Planning and strategy
-- Comparing options
+## Prompt Composition
 
-```bash
-node smart-memory/smart_memory.js --focus
-node smart-memory/smart_memory.js --search "What did we decide about BluePointDigital architecture?"
-```
+The `/compose` endpoint assembles context in priority order:
 
-**How Focus Mode Works:**
-1. **Retrieve** 20+ chunks (broad net)
-2. **Rank** by weighted relevance (vector + term matching + source boost)
-3. **Synthesize** into coherent narrative
-4. **Deliver** structured context with confidence scores
+1. **Identity** (configurable budget)
+2. **Temporal State** (time, last interaction)
+3. **Hot Memory** (active projects, working questions)
+4. **Retrieved LTM** (ranked memories by relevance)
+5. **Conversation History** (recent turns)
 
-## How It Works
+Eviction is deterministic: lower importance + older + less accessed = evicted first.
 
-### Hybrid Search Algorithm
+## Configuration
 
-1. **FTS5** finds exact keyword matches (BM25 ranking)
-2. **Vector search** finds semantic matches (cosine similarity)
-3. **Merged results** using weighted scoring:
-   - 70% vector score + 30% keyword score
-   - Catches both "what you mean" and "exact tokens"
+### Environment Variables
 
-### Focus Agent Curation
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMORY_DATA_DIR` | `./data` | Storage directory for Qdrant |
+| `MEMORY_LOG_LEVEL` | `INFO` | Logging level |
 
-When enabled, searches go through additional processing:
+### Token Budgets (in compose request)
 
-```
-Query: "What did we decide about BluePointDigital?"
-
-┌─────────────────┐
-│  Retrieve 20+   │  ← Vector similarity
-│    chunks       │
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│   Weighted      │  ← Term matching
-│    Ranking      │    Source boosting
-│                 │    Recency boost
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│   Select Top 5  │  ← Threshold filtering
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│   Synthesize    │  ← Group by source
-│   Narrative     │    Extract key facts
-└────────┬────────┘
-         ▼
-    Structured output with confidence
-```
-
-## Tools
-
-### memory_search
-```javascript
-memory_search({
-    query: "deployment configuration",
-    maxResults: 5
-})
-```
-
-Returns (Fast Mode):
 ```json
 {
-    "query": "deployment configuration",
-    "mode": "fast",
-    "results": [
-        {
-            "path": "MEMORY.md",
-            "from": 42,
-            "lines": 8,
-            "score": 0.89,
-            "snippet": "..."
-        }
-    ]
+  "max_context_tokens": 4000,
+  "identity_budget_tokens": 500,
+  "temporal_budget_tokens": 200,
+  "hot_memory_budget_tokens": 800,
+  "ltm_budget_tokens": 1500,
+  "conversation_budget_tokens": 1000
 }
-```
-
-Returns (Focus Mode):
-```json
-{
-    "query": "deployment configuration",
-    "mode": "focus",
-    "confidence": 0.87,
-    "sources": ["MEMORY.md", "memory/2026-02-05.md"],
-    "synthesis": "Relevant context for: \"deployment configuration\"\n\nFrom MEMORY.md:\n  • Docker setup uses docker-compose...\n  • Production deployment on AWS...\n\nFrom memory/2026-02-05.md:\n  • Decided to use Railway instead...",
-    "facts": [
-        {
-            "content": "Docker setup uses docker-compose...",
-            "source": "MEMORY.md",
-            "lines": "42-50",
-            "confidence": 0.89
-        }
-    ]
-}
-```
-
-### memory_get
-```javascript
-memory_get({
-    path: "MEMORY.md",
-    from: 42,
-    lines: 10
-})
-```
-
-### memory_mode (Focus Toggle)
-```javascript
-memory_mode('focus')    // Enable curated retrieval
-memory_mode('fast')     // Disable curated retrieval
-memory_mode()           // Get current mode status
-```
-
-## CLI Commands
-
-```bash
-# Sync memory files
-node smart_memory.js --sync
-
-# Search (uses current mode)
-node smart_memory.js --search "query" [--max-results N]
-
-# Search with mode override
-node smart_memory.js --search "query" --focus
-node smart_memory.js --search "query" --fast
-
-# Toggle modes
-node smart_memory.js --focus      # Enable focus mode
-node smart_memory.js --unfocus    # Disable focus mode
-node smart_memory.js --fast       # Same as --unfocus
-
-# Check status
-node smart_memory.js --status     # Database stats + current mode
-node smart_memory.js --mode       # Current mode details
-
-# Focus agent only
-node focus_agent.js --search "query"
-node focus_agent.js --suggest "query"  # Check if focus recommended
-
-# Mode management
-node memory_mode.js focus
-node memory_mode.js unfocus
-node memory_mode.js status
 ```
 
 ## Performance
 
-| Feature | Fallback | With sqlite-vec |
-|---------|----------|-----------------|
-| Keyword search | FTS5 (native) | FTS5 (native) |
-| Vector search | JS cosine | Native KNN |
-| Focus curation | +50-100ms | +50-100ms |
-| Speed | ~100 chunks/sec | ~10,000 chunks/sec |
-| Memory | All in RAM | DB handles it |
+| Metric | CPU | GPU (if available) |
+|--------|-----|-------------------|
+| Cold start | ~3s | ~3s |
+| Embedding latency | ~35ms | ~25ms |
+| Retrieval latency | ~50ms | ~40ms |
+| Memory usage | ~400MB | ~1.2GB |
 
-## When to Use Focus Mode
+## Requirements Files
 
-Use `--focus` or enable focus mode when:
-- Query involves multiple related concepts
-- You need synthesized context, not raw chunks
-- Making decisions that require understanding relationships
-- Summarizing project history
-- Comparing options mentioned in different files
+- `requirements-cognitive.txt` - GPU-enabled PyTorch (full)
+- `requirements-cognitive-cpu.txt` - CPU-only PyTorch (recommended)
 
-Don't use focus mode when:
-- Quick fact lookup (phone number, command syntax)
-- You need exact text matches
-- Latency matters more than context quality
+## Development
 
-## Installation: sqlite-vec (Optional)
-
-For best performance, install sqlite-vec:
-
+### Run Tests
 ```bash
-# macOS
-brew install sqlite-vec
-
-# Ubuntu/Debian
-# Download from https://github.com/asg017/sqlite-vec/releases
-# Place vec0.so in ~/.local/lib/ or /usr/local/lib/
+cd tests
+pytest -v
 ```
 
-Without it: Works fine, just slower on large databases.
-
-## File Structure
-
+### Project Structure
 ```
-smart-memory/
-├── smart_memory.js      # Main CLI
-├── focus_agent.js       # Curated retrieval engine
-├── memory_mode.js       # Mode toggle commands
-├── memory.js            # OpenClaw wrapper
-├── db.js                # SQLite layer
-├── search.js            # Hybrid search
-├── chunker.js           # Token-based chunking
-├── embed.js             # Transformers.js embeddings
-└── vector-memory.db     # SQLite database (auto-created)
+.
+├── server.py                    # FastAPI entry point
+├── cognitive_memory_system.py   # Main orchestrator
+├── ingestion/                   # Ingestion pipeline
+├── retrieval/                   # Retrieval pipeline
+├── hot_memory/                  # Working memory manager
+├── cognition/                   # Background processing
+├── prompt_engine/               # Prompt composition
+├── storage/                     # Qdrant vector store
+├── embeddings/                  # Nomic embedder
+└── entities/                    # Entity extraction
 ```
 
-## Environment Variables
+## Troubleshooting
 
+**Server won't start:**
 ```bash
-MEMORY_DIR=/path/to/memory        # Default: ./memory
-MEMORY_FILE=/path/to/MEMORY.md    # Default: ./MEMORY.md
-MEMORY_DB_PATH=/path/to/db.sqlite # Default: ./vector-memory.db
+# Check port 8000 is free
+lsof -i :8000
+
+# Check logs
+tail -f /tmp/smart-memory-server.log
 ```
 
-## Comparison: v1 vs v2 vs v2.1
+**Out of memory:**
+- Use CPU-only requirements: `pip install -r requirements-cognitive-cpu.txt`
+- Reduce batch sizes in `embeddings/embedder.py`
 
-| | v1 (JSON) | v2 (SQLite) | v2.1 (Focus Agent) |
-|--|-----------|-------------|-------------------|
-| Search | Vector only | Hybrid (BM25 + Vector) | Hybrid + Focus Curation |
-| Storage | JSON file | SQLite | SQLite |
-| Scale | ~1000 chunks | Unlimited | Unlimited |
-| Keyword match | Weak | Strong (FTS5) | Strong (FTS5) |
-| Context curation | No | No | Yes (toggle) |
-| Setup | Zero config | Zero config | Zero config |
+**Poor retrieval quality:**
+- Run background cognition: `/run_background`
+- Check entity extraction is working (see logs)
+- Verify memories are being ingested (check storage)
 
 ## License
 
