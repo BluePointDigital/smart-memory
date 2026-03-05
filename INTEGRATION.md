@@ -16,9 +16,69 @@ Rather than external scripts injecting context, the agent:
 
 This creates resilient, authentic memory experience.
 
-## Session Start Pattern
+## Session Startup Pattern (Critical)
 
-### 1. Health Check (Self-Check)
+**⚠️ Without this pattern, your agent wakes up blank every session.**
+
+The most common integration failure: agents start responding before querying memory. Here's the mandatory sequence:
+
+### The 4-Step Startup
+
+```
+User starts session
+    ↓
+Agent wakes up
+    ↓
+[1] Health Check → Is memory server running?
+    ↓
+[2] Self-Prime → Query /compose endpoint
+    ↓
+[3] Internalize → Hold context in agent state
+    ↓
+[4] Respond → Generate grounded greeting
+```
+
+### Implementation by Framework
+
+**OpenClaw:**
+- Use `examples/session-start/openclaw-prime.sh`
+- Add to AGENTS.md "Every Session" section
+- Read `.session-memory-context.json` before greeting
+
+**Python (LangChain, custom):**
+- Use `examples/session-start/generic-python.py`
+- Call `prime_memory()` in agent `__init__` or `wake()`
+- See [docs/AGENT-FRAMEWORKS.md](docs/AGENT-FRAMEWORKS.md#python)
+
+**Node.js:**
+- Use `examples/session-start/nodejs-agent.js`
+- Call `primeMemory()` before first response
+- See [docs/AGENT-FRAMEWORKS.md](docs/AGENT-FRAMEWORKS.md#nodejs--javascript-agents)
+
+**CLI Tool (Universal):**
+```bash
+python tools/session-prime.py --agent-name "MyAgent" --output context.json
+```
+
+### What Happens Without This
+
+```
+User: /new
+Agent: "Hello! How can I help you today?"  ← Blank slate. Generic. Broken.
+```
+
+### What Happens With This
+
+```
+User: /new
+Agent: "Hey James. 🌙 We were just finishing the automatic memory 
+        priming script. The server has our history loaded. What's next?"
+        ← Grounded. Continuous. Working.
+```
+
+### The Session Start Pattern (Detailed)
+
+#### 1. Health Check (Self-Check)
 
 ```javascript
 import memory from "smart-memory";
@@ -187,3 +247,21 @@ An agent that:
 - **Does this itself** (self-directed)
 
 That's continuity. That's a mind, not a cache.
+
+## Resources
+
+- **[examples/session-start/](examples/session-start/)** — Framework-specific startup code
+  - `openclaw-prime.sh` — OpenClaw bash script
+  - `generic-python.py` — Python module for any framework
+  - `nodejs-agent.js` — Node.js module
+  - `README.md` — Usage examples
+  
+- **[docs/AGENT-FRAMEWORKS.md](docs/AGENT-FRAMEWORKS.md)** — Detailed integration for:
+  - OpenClaw
+  - LangChain
+  - OpenAI Assistants API
+  - Custom Python agents
+  - Node.js agents
+  - Docker/containerized deployments
+  
+- **[tools/session-prime.py](tools/session-prime.py)** — Universal CLI tool for session priming
