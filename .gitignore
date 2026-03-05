@@ -1,0 +1,28 @@
+# Runtime memory and cognitive state (never commit personal memories)
+data/
+
+# Python environments
+.venv/
+venv/
+env/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node artifacts
+node_modules/
+smart-memory/node_modules/
+
+# Local DB and vector artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# OS/editor artifacts
+.DS_Store
+Thumbs.db
