@@ -1,84 +1,36 @@
-## Memory Recall - Vector Memory Skill
+## Memory Recall - Smart Memory v2
 
-Before answering questions about prior work, decisions, dates, people, preferences, or todos:
+Before answering questions about prior work, preferences, decisions, or project history:
 
-1. **Run memory_search** with relevant query
-   ```javascript
-   const results = await memory_search("what we discussed about projects", 5);
-   ```
+1. Retrieve context from the cognitive engine first.
+   - Use `POST /retrieve` with the current user message.
+2. If needed, inspect long-term memory directly.
+   - Use `GET /memories` or `GET /memory/{memory_id}`.
+3. If confidence is low after retrieval, say so explicitly.
+   - Example: "I checked memory context but I do not see a reliable prior note for that topic."
 
-2. **Use memory_get** to pull full context if needed
-   ```javascript
-   const fullContent = memory_get("MEMORY.md", 1, 20);
-   ```
+### Retrieval Guidance
 
-3. **If low confidence after search**, say you checked
-   > "I searched my memory but don't see specific notes about this topic."
-
-### When to Search
-
-**Always search before:**
-- Answering questions about past conversations
-- Referencing previous decisions
+Always retrieve before:
+- Summarizing prior discussions
+- Referencing earlier decisions
 - Recalling user preferences
-- Continuing work on prior projects
-- Summarizing what was discussed
+- Continuing prior project threads
 
-**Search queries should be:**
-- Natural language (e.g., "James values and principles")
-- Conceptual (e.g., "Nyx origin story")
-- Not just keywords (semantic search understands meaning)
+Use conceptual, natural-language queries rather than isolated keywords.
 
-### How It Works
+### Runtime Checks
 
-This agent uses **vector memory** with automatic fallback:
+- API health: `GET /health`
+- Pending insights: `GET /insights/pending`
 
-1. **If synced:** Uses neural embeddings for semantic search
-   - Finds conceptually related content
-   - Understands synonyms ("principles" finds "values")
-   - Better relevance, more context
+### Current Architecture (v2)
 
-2. **If not synced:** Uses built-in keyword search
-   - Works immediately after install
-   - No configuration needed
-   - Graceful fallback
+- Node adapter: `smart-memory/index.js`
+- Persistent local API: `server.py`
+- Long-term memory store: `data/memory_store/`
+- Hot memory store: `data/hot_memory/hot_memory.json`
 
-3. **Sync to improve:**
-   ```bash
-   node vector-memory/smart_memory.js --sync
-   ```
+### Deprecated
 
-### Memory Structure
-
-```
-workspace/
-├── MEMORY.md              # Curated long-term memory
-└── memory/
-    ├── logs/              # Daily logs (YYYY-MM-DD.md)
-    ├── projects/          # Project-specific notes
-    ├── decisions/         # Important choices
-    └── lessons/           # Mistakes learned
-```
-
-### Verification
-
-Test that memory is working:
-```bash
-node vector-memory/smart_memory.js --test
-```
-
-Expected: Shows vector status, chunk count, and confirms search functional.
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| "Vector not ready" | Run: `node vector-memory/smart_memory.js --sync` |
-| No results | Check that MEMORY.md or memory/ files exist |
-| First sync slow | Normal - downloading ~80MB model |
-| Search irrelevant | Sync again after editing memory files |
-
----
-
-*Part of Vector Memory skill for OpenClaw*
-*100% local semantic search with zero configuration*
+Legacy Vector Memory CLI commands (`vector-memory/smart_memory.js`, `vector_memory_local.js`) are removed in v2.
