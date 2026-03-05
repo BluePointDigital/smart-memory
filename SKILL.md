@@ -40,15 +40,35 @@ Smart Memory v2 is not a legacy Vector Memory CLI. It is a persistent cognitive 
 - `GET /memory/{memory_id}`
 - `GET /insights/pending`
 
-## Install
+## Install (CPU-Only Recommended)
+
+For Docker, WSL, and laptops without NVIDIA GPUs, use the CPU-only version (~200MB vs ~2GB):
 
 ```bash
 # from repository root
 cd smart-memory
+
+# Create Python venv
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install CPU-only PyTorch FIRST (before sentence-transformers)
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# Then install remaining dependencies
+pip install -r requirements-cognitive.txt
+
+# Finally, install Node dependencies
 npm install
 ```
 
-`npm install` runs `postinstall.js`, creates `.venv`, installs CPU-only PyTorch, and installs cognitive Python dependencies.
+**Why CPU-only?**
+- Smaller: ~200MB vs ~2GB
+- No CUDA drivers needed
+- Performance: ~50ms ingestion vs ~40ms on GPU (acceptable trade-off)
+- Perfect for local development, Docker, and edge deployment
+
+**GPU Option:** If you have an NVIDIA GPU and want maximum speed, install the full `requirements-cognitive.txt` without the CPU torch line.
 
 ## PyTorch Policy
 
