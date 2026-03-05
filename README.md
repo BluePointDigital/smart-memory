@@ -3,13 +3,14 @@
 <p>
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
-  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Local%20Brain-009688?logo=fastapi&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Persistent%20Local%20API-009688?logo=fastapi&logoColor=white">
   <img alt="Embeddings" src="https://img.shields.io/badge/Embeddings-nomic--embed--text--v1.5-blue">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-CPU--Only-critical?logo=pytorch">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-black">
 </p>
 
 > **Not a basic RAG cache.**  
-> Smart Memory v2 is a persistent, local cognitive engine for OpenClaw: schema-versioned memory objects, hot working memory, background cognition, and a continuously running FastAPI process that keeps retrieval fast.
+> Smart Memory v2 is a persistent, local cognitive engine for OpenClaw with schema-versioned long-term memory, hot working memory, background cognition, strict token-bounded prompt composition, and a continuously running FastAPI process.
 
 ---
 
@@ -17,11 +18,12 @@
 
 | You Need | Smart Memory v2 Gives You |
 |---|---|
-| Agent continuity across sessions | Structured long-term memory (`episodic`, `semantic`, `belief`, `goal`) |
-| Fast semantic recall | Local Nomic embeddings + vector search + reranking |
-| Reduced hallucinated "state drift" | Prompt composer with temporal state + hot memory + strict context budgeting |
-| Better long-run memory quality | Background reflection, consolidation, decay, belief conflict resolution |
-| Low latency after startup | Persistent FastAPI process keeps embedder/DB connections hot |
+| Continuity across sessions | Typed long-term memory (`episodic`, `semantic`, `belief`, `goal`) |
+| Fast local recall | Nomic embeddings + vector search + reranking |
+| Stable context quality | Strict prompt token enforcement with deterministic eviction priority |
+| Better long-run memory quality | Semantic dedup, reinforcement, consolidation, decay, and conflict resolution |
+| Lightweight installs | CPU-only PyTorch standard (no CUDA wheel bloat) |
+| Operational visibility | `/health`, `/memories`, `/memory/{id}`, `/insights/pending` |
 
 ---
 
@@ -32,7 +34,7 @@ Smart Memory v2 is designed as a **cognitive pipeline**:
 
 - `Ingestion`: Decide what is memory-worthy.
 - `Retrieval`: Find relevant memories with entity and time bias.
-- `Working Memory`: Keep a small, high-signal "mind state."
+- `Working Memory`: Keep a small, high-signal mind state.
 - `Background Cognition`: Reflect, consolidate, decay, and resolve conflicts.
 - `Prompt Composition`: Assemble bounded, coherent context for the model.
 
@@ -57,45 +59,83 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  U["User Message"] --> ING["/ingest\nHeuristic filter -> scoring -> classification"]
-  U --> RET["/retrieve\nEntity bias -> vector search -> rerank"]
+  U["User Message"] --> ING["/ingest\nHeuristic filter -> scoring -> classification -> semantic dedup"]
+  U --> RET["/retrieve\nEntity bias -> vector search -> rerank -> access tracking"]
   RET --> COM["/compose\nIdentity + temporal + hot memory + selected LTM + history"]
   BG["/run_background"] --> COG["Reflection + consolidation + decay + belief conflict resolution"]
 ```
 
 ---
 
+## Phase 8 Production Polish
+
+### CPU-Only Standard (lightweight)
+- Install now explicitly forces CPU wheels:
+- `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu`
+- `requirements-cognitive.txt` includes `einops>=0.8.0` for Nomic compatibility.
+
+### Strict Token Enforcement
+`max_prompt_tokens` is now hard-enforced at render time. If over budget, eviction happens in this exact order:
+1. Oldest conversation history
+2. Lower-ranked retrieved memories
+3. Insight queue items
+4. Working memory
+5. Temporal state
+6. Agent identity (never evicted)
+
+### Access Tracking Fixed
+Selected retrieval memories now persist:
+- `last_accessed = now()`
+- `access_count += 1`
+
+### Semantic Dedup in Ingestion
+Before creating a new memory:
+- Embed candidate content
+- Search top-1 nearest vector
+- If cosine similarity `> 0.85`, skip new memory creation and reinforce existing memory:
+- update `last_accessed`
+- increment `access_count`
+- increment `reinforced_count` for belief memories
+
+### Conflict Resolver Thresholds Relaxed
+Belief conflicts are now flagged when:
+- beliefs share at least one entity
+- and stances or sentiment are opposing
+
+### Observability Endpoints
+- `GET /health` includes embedder-loaded status and model/backend metadata
+- `GET /memories?type=` lists memory objects (optional type filter)
+- `GET /memory/{memory_id}` fetches one memory object
+- `GET /insights/pending` inspects pending hot-memory insights
+
+### Prompt Compose Input Improvement
+`hot_memory` is optional in `PromptComposerRequest`; a safe default object is used when omitted.
+
+---
+
 ## Feature Highlights
 
-### ?? Hybrid Node + Python Design
+### Hybrid Node + Python Design
 - OpenClaw stays in Node.
 - Heavy cognitive operations run in Python.
 - `index.js` is a thin adapter that talks HTTP to `localhost:8000`.
 
-### ? Cold-Start Prevention
+### Cold-Start Prevention
 - The adapter launches `uvicorn` once and keeps it alive.
 - Nomic embeddings and storage connections remain warm between calls.
 
-### ?? REM-Style Background Cognition
-- Periodic background cycle handles:
+### REM-Style Background Cognition
+Periodic background cycle handles:
 - reflection + associative insights
 - memory consolidation
 - decay + vector pruning
 - belief conflict resolution
 
-### ?? Entity-Aware Retrieval
-- Retrieval pipeline supports:
-- vector similarity candidate pool
-- entity-biased ranking
-- time-aware filtering
-- final reranked selection
+### Curiosity Triggers
+Associative insight generation computes curiosity from emotional intensity and familiarity.
+High-curiosity memories can become proactive working questions.
 
-### ? Curiosity Triggers
-- Associative insight generation computes a curiosity score from emotional intensity and familiarity.
-- High-curiosity memories can become proactive working questions:
-- `"User was very frustrated by X, did they resolve it?"`
-
-### ?? Schema-First Memory Objects
+### Schema-First Memory Objects
 - JSON documents validated with Pydantic.
 - Schema versioning + entity IDs + relations + emotional metadata.
 
@@ -129,8 +169,8 @@ flowchart TD
 +- embeddings/
 +- entities/
 +- smart-memory/
-   +- index.js         # OpenClaw adapter
-   +- postinstall.js   # Python venv/bootstrap
+   +- index.js
+   +- postinstall.js
 ```
 
 ---
@@ -154,11 +194,10 @@ npm install
 ### What `npm install` Does
 
 `postinstall.js` automatically:
-
 1. Creates `.venv` at repository root.
 2. Upgrades `pip`.
-3. Installs `requirements-cognitive.txt`.
-4. Prepares FastAPI + cognitive dependencies (`sentence-transformers`, `qdrant-client`, etc.).
+3. Installs CPU-only PyTorch wheels.
+4. Installs `requirements-cognitive.txt` (including FastAPI, sentence-transformers, qdrant-client, einops).
 
 Works on both Windows and Unix path conventions.
 
@@ -166,69 +205,32 @@ Works on both Windows and Unix path conventions.
 
 ## How To Use
 
-### 1. Import the adapter
-
 ```js
 import memory from "smart-memory";
-```
 
-### 2. Start (or let wrappers auto-start)
-
-```js
 await memory.start();
-```
 
-### 3. Ingest a new interaction
-
-```js
 await memory.ingestMessage({
   user_message: "I started migrating our database today.",
-  assistant_message: "Great, we should track risks and rollback strategy.",
+  assistant_message: "Track risks and rollback strategy.",
   timestamp: new Date().toISOString()
 });
-```
 
-### 4. Retrieve context
-
-```js
 const retrieval = await memory.retrieveContext({
   user_message: "How is the migration going?",
   conversation_history: "..."
 });
-```
 
-### 5. Compose prompt context
-
-```js
 const composed = await memory.getPromptContext({
   agent_identity: "You are a persistent cognitive assistant.",
   conversation_history: "...",
   current_user_message: "Continue from where we left off."
+  // hot_memory optional
 });
-```
 
-### 6. Optional manual background run
-
-```js
 await memory.runBackground(true);
-```
-
-### 7. Shutdown cleanly
-
-```js
 await memory.stop();
 ```
-
----
-
-## Adapter Lifecycle (Automatic)
-
-`smart-memory/index.js` handles process orchestration:
-
-- starts Python FastAPI server if `/health` is not ready
-- waits until healthy before serving calls
-- runs hourly background cycles (`/run_background`)
-- cleans up Python child process on `SIGINT`, `SIGTERM`, and exit
 
 ---
 
@@ -250,27 +252,14 @@ await memory.stop();
 | Endpoint | Method | Description |
 |---|---|---|
 | `/` | `GET` | Basic service status |
-| `/health` | `GET` | Health check used by adapter |
+| `/health` | `GET` | Health + embedder loaded metadata |
 | `/ingest` | `POST` | Ingest incoming interaction |
 | `/retrieve` | `POST` | Retrieve relevant long-term memories |
 | `/compose` | `POST` | Compose prompt context payload |
 | `/run_background` | `POST` | Execute background cognition cycle |
-
----
-
-## Performance Notes
-
-- Persistent server avoids reloading embedding model per call.
-- Retrieval quality depends on entity extraction quality + memory hygiene.
-- Background cognition keeps memory store useful by preventing long-term clutter.
-
----
-
-## Requirements
-
-- Node.js `>=18`
-- Python `>=3.11`
-- Local disk for model cache + memory storage
+| `/memories` | `GET` | List memories (`?type=` optional) |
+| `/memory/{memory_id}` | `GET` | Fetch one memory by ID |
+| `/insights/pending` | `GET` | View pending hot-memory insights |
 
 ---
 
@@ -279,6 +268,14 @@ await memory.stop();
 - Memory data is designed for local operation.
 - `.gitignore` excludes runtime memory stores, virtualenvs, caches, and `node_modules`.
 - Review ignored paths before publishing any fork.
+
+---
+
+## Requirements
+
+- Node.js `>=18`
+- Python `>=3.11`
+- Local disk for model cache + memory storage
 
 ---
 

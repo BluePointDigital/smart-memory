@@ -17,7 +17,7 @@ def test_retrieval_prioritizes_relevant_entity_memories(tmp_path):
         embedder=embedder,
     )
 
-    ingestion.ingest_dict(
+    first = ingestion.ingest_dict(
         {
             "user_message": "Database migration project is active and we are tracking schema changes.",
             "assistant_message": "Captured as active project status.",
@@ -43,3 +43,8 @@ def test_retrieval_prioritizes_relevant_entity_memories(tmp_path):
     assert result.degraded is False
     assert len(result.selected) >= 1
     assert "database" in result.selected[0].memory.content.lower()
+
+    assert first.memory_id is not None
+    touched = json_store.get_memory(first.memory_id)
+    assert touched is not None
+    assert touched.access_count >= 1

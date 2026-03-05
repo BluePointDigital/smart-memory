@@ -32,6 +32,47 @@ def _allocate_exact_tokens(total_tokens: int, percentages: dict[str, float]) -> 
     return floor_tokens
 
 
+def _apply_minimums(tokens: dict[str, int], minimums: dict[str, int]) -> dict[str, int]:
+    """Enforce per-section minimums while preserving total allocation."""
+
+    adjusted = dict(tokens)
+    for section, minimum in minimums.items():
+        minimum = max(0, int(minimum))
+        current = adjusted.get(section, 0)
+        if current >= minimum:
+            continue
+
+        deficit = minimum - current
+        adjusted[section] = minimum
+
+        donors = sorted(
+            (
+                name
+                for name in adjusted
+                if name != section and adjusted[name] > minimums.get(name, 0)
+            ),
+            key=lambda name: adjusted[name],
+            reverse=True,
+        )
+
+        for donor in donors:
+            available = adjusted[donor] - minimums.get(donor, 0)
+            if available <= 0:
+                continue
+
+            take = min(available, deficit)
+            adjusted[donor] -= take
+            deficit -= take
+
+            if deficit == 0:
+                break
+
+        if deficit > 0:
+            raise ValueError("Unable to satisfy token minimum constraints")
+
+    return adjusted
+
+
 def allocate_tokens(
     total_tokens: int,
     interaction_state: InteractionState,
@@ -79,5 +120,12 @@ def allocate_tokens(
 
     percentages = _normalize_percentages(percentages)
     tokens = _allocate_exact_tokens(total_tokens, percentages)
+    tokens = _apply_minimums(
+        tokens,
+        {
+            "system_identity": 1,
+            "conversation_history": 1,
+        },
+    )
 
     return TokenAllocation(total_tokens=total_tokens, **tokens)

@@ -78,6 +78,20 @@ function main() {
   runCommand(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], 'Upgrading pip');
   runCommand(
     venvPython,
+    [
+      '-m',
+      'pip',
+      'install',
+      'torch',
+      'torchvision',
+      'torchaudio',
+      '--index-url',
+      'https://download.pytorch.org/whl/cpu',
+    ],
+    'Installing CPU-only PyTorch'
+  );
+  runCommand(
+    venvPython,
     ['-m', 'pip', 'install', '-r', requirementsPath],
     'Installing cognitive requirements'
   );

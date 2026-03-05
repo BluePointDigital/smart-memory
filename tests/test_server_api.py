@@ -1,14 +1,62 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from prompt_engine.schemas import AgentState, AgentStatus, HotMemory
 from server import create_app
 
 
+class StubEmbedder:
+    model_name = "stub-embedder"
+
+    def embed(self, text: str):
+        return [0.0]
+
+
+class StubMemoryStore:
+    def list_memories(self, *, types=None, limit=None, created_after=None):
+        return []
+
+    def get_memory(self, memory_id: str):
+        return None
+
+
+class StubRetrievalComponent:
+    def __init__(self):
+        self.embedder = StubEmbedder()
+        self.json_store = StubMemoryStore()
+
+
+class StubIngestionComponent:
+    def __init__(self):
+        self.embedder = StubEmbedder()
+        self.json_store = StubMemoryStore()
+
+
+class StubHotMemoryManager:
+    def get(self):
+        now = datetime.now(timezone.utc)
+        return HotMemory(
+            agent_state=AgentState(
+                status=AgentStatus.ENGAGED,
+                last_interaction_timestamp=now,
+                last_background_task="none",
+            ),
+            active_projects=[],
+            working_questions=[],
+            top_of_mind=[],
+            insight_queue=[],
+        )
+
+
 class StubCognitiveSystem:
+    def __init__(self):
+        self.retrieval = StubRetrievalComponent()
+        self.ingestion = StubIngestionComponent()
+        self.hot_memory = StubHotMemoryManager()
+
     def ingest_interaction(self, payload):
         return {"ok": True, "kind": "ingest", "payload": payload}
 
@@ -53,6 +101,10 @@ def test_server_endpoints_with_stub_system():
     app = create_app(system_factory=StubCognitiveSystem)
 
     with TestClient(app) as client:
+        health_resp = client.get("/health")
+        assert health_resp.status_code == 200
+        assert health_resp.json()["embedder_loaded"] is True
+
         ingest_resp = client.post(
             "/ingest",
             json={
@@ -80,17 +132,6 @@ def test_server_endpoints_with_stub_system():
                 "agent_identity": "test-agent",
                 "current_user_message": "hello",
                 "conversation_history": "",
-                "hot_memory": {
-                    "agent_state": {
-                        "status": "engaged",
-                        "last_interaction_timestamp": "2026-03-04T00:00:00+00:00",
-                        "last_background_task": "none",
-                    },
-                    "active_projects": [],
-                    "working_questions": [],
-                    "top_of_mind": [],
-                    "insight_queue": [],
-                },
                 "max_prompt_tokens": 256,
                 "retrieval_timeout_ms": 500,
                 "max_candidate_memories": 30,
@@ -99,6 +140,17 @@ def test_server_endpoints_with_stub_system():
         )
         assert compose_resp.status_code == 200
         assert "prompt" in compose_resp.json()
+
+        memories_resp = client.get("/memories")
+        assert memories_resp.status_code == 200
+        assert memories_resp.json() == []
+
+        missing_memory_resp = client.get("/memory/not-found")
+        assert missing_memory_resp.status_code == 404
+
+        insights_resp = client.get("/insights/pending")
+        assert insights_resp.status_code == 200
+        assert insights_resp.json()["count"] == 0
 
         background_resp = client.post("/run_background", json={"scheduled": True})
         assert background_resp.status_code == 200

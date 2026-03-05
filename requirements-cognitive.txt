@@ -2,6 +2,7 @@ pydantic>=2,<3
 numpy>=1.26
 pytest>=8,<10
 sentence-transformers>=3,<4
+einops>=0.8.0
 qdrant-client>=1.9
 fastapi>=0.115,<1
 uvicorn>=0.30,<1

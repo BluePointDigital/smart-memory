@@ -239,12 +239,27 @@ class TokenAllocation(StrictModel):
         return self
 
 
+
+def _default_hot_memory() -> HotMemory:
+    now = _utc_now()
+    return HotMemory(
+        agent_state=AgentState(
+            status=AgentStatus.IDLE,
+            last_interaction_timestamp=now,
+            last_background_task="none",
+        ),
+        active_projects=[],
+        working_questions=[],
+        top_of_mind=[],
+        insight_queue=[],
+    )
+
 class PromptComposerRequest(StrictModel):
     agent_identity: str = Field(min_length=1)
     current_user_message: str = Field(min_length=1)
     conversation_history: str = ""
     last_interaction_timestamp: datetime | None = None
-    hot_memory: HotMemory
+    hot_memory: HotMemory = Field(default_factory=_default_hot_memory)
     max_prompt_tokens: Annotated[int, Field(ge=256)] = 8192
     retrieval_timeout_ms: Annotated[int, Field(ge=50, le=10000)] = 500
     max_candidate_memories: Annotated[int, Field(ge=1, le=100)] = 30
@@ -272,3 +287,5 @@ class PromptComposerOutput(StrictModel):
     token_allocation: TokenAllocation
     degraded_subsystems: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+

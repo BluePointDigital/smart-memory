@@ -15,7 +15,7 @@ Incoming interaction
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,6 +52,7 @@ class IngestionPipelineConfig:
     enable_llm_refinement: bool = True
     llm_trigger_count_threshold: int = 2
     llm_min_heuristic_score: float = 0.30
+    semantic_dedup_threshold: float = 0.85
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,44 @@ class IngestionPipeline:
             return True
 
         return False
+
+    
+    def _supports_semantic_dedup(self) -> bool:
+        model_name = str(getattr(self.embedder, "model_name", "")).lower()
+        # Hashing fallback is deterministic but too coarse for reliable semantic dedup.
+        return "hashing" not in model_name
+
+    def _find_semantic_duplicate(self, vector: list[float]) -> tuple[str, float] | None:
+        try:
+            hits = self.vector_store.search(query_vector=vector, top_k=1)
+        except Exception:  # noqa: BLE001
+            return None
+
+        if not hits:
+            return None
+
+        top = hits[0]
+        if top.score <= self.config.semantic_dedup_threshold:
+            return None
+
+        return (top.memory_id, top.score)
+
+    def _reinforce_existing_memory(self, memory_id: str, *, now: datetime) -> tuple[str, MemoryType] | None:
+        existing = self.json_store.get_memory(memory_id)
+        if existing is None:
+            return None
+
+        updates: dict[str, Any] = {
+            "last_accessed": now,
+            "access_count": existing.access_count + 1,
+        }
+
+        if existing.type == MemoryType.BELIEF:
+            updates["reinforced_count"] = existing.reinforced_count + 1
+
+        reinforced = existing.model_copy(update=updates)
+        self.json_store.update_memory(reinforced)
+        return (str(reinforced.id), reinforced.type)
 
     def ingest(self, interaction: IncomingInteraction) -> IngestionResult:
         system_generated_insight = bool(
@@ -188,10 +227,30 @@ class IngestionPipeline:
             entities_override=entities,
         )
 
-        self.json_store.save_memory(memory)
-
         memory_id = str(memory.id)
         vector = self.embedder.embed(memory.content)
+
+        duplicate = self._find_semantic_duplicate(vector) if self._supports_semantic_dedup() else None
+        if duplicate is not None:
+            existing_id, _score = duplicate
+            reinforced = self._reinforce_existing_memory(
+                existing_id,
+                now=interaction.timestamp or datetime.now(timezone.utc),
+            )
+            if reinforced is not None:
+                reinforced_id, reinforced_type = reinforced
+                return IngestionResult(
+                    stored=False,
+                    reason="semantic_duplicate_reinforced",
+                    triggers=heuristic.triggers,
+                    importance=importance_score,
+                    memory_id=reinforced_id,
+                    memory_type=reinforced_type,
+                    llm_used=llm_used,
+                )
+
+        self.json_store.save_memory(memory)
+
         self.vector_store.upsert_vector(
             memory_id=memory_id,
             vector=vector,
@@ -226,3 +285,6 @@ class IngestionPipeline:
         for payload in payloads:
             results.append(self.ingest_dict(payload))
         return results
+
+
+

@@ -49,6 +49,39 @@ class RetrievalPipeline:
         self.entity_resolver = entity_resolver or EntityAliasResolver()
         self.config = config
 
+    def _mark_selected_as_accessed(
+        self,
+        selected: list[RankedCandidate],
+        *,
+        accessed_at: datetime,
+    ) -> list[RankedCandidate]:
+        """Persist access tracking for selected memories and return updated candidates."""
+
+        updated_selected: list[RankedCandidate] = []
+
+        for ranked in selected:
+            memory = ranked.memory
+            try:
+                touched_memory = memory.model_copy(
+                    update={
+                        "last_accessed": accessed_at,
+                        "access_count": memory.access_count + 1,
+                    }
+                )
+                self.json_store.update_memory(touched_memory)
+                updated_selected.append(
+                    RankedCandidate(
+                        memory=touched_memory,
+                        score=ranked.score,
+                        vector_score=ranked.vector_score,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                # Access tracking should not fail retrieval delivery.
+                updated_selected.append(ranked)
+
+        return updated_selected
+
     def retrieve(self, user_message: str, *, conversation_history: str = "") -> RetrievalResult:
         now = datetime.now(timezone.utc)
 
@@ -91,6 +124,7 @@ class RetrievalPipeline:
                 query_entities=detection.entities,
                 top_k=self.config.selected_size,
             )
+            selected = self._mark_selected_as_accessed(selected, accessed_at=now)
 
             return RetrievalResult(
                 user_message=user_message,
