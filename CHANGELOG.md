@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.2.0] - 2026-03-05
+
+### Added
+- FastAPI observability endpoints for runtime inspection:
+  - `GET /health` (embedder-loaded status and backend metadata)
+  - `GET /memories` (with optional `?type=` filter)
+  - `GET /memory/{memory_id}`
+  - `GET /insights/pending`
+- Regression coverage for strict token budgeting and observability behavior.
+
+### Changed
+- Standardized cognitive runtime installs to CPU-only PyTorch wheels in `postinstall.js`:
+  - `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu`
+- Added `einops>=0.8.0` to cognitive requirements for Nomic embedding compatibility.
+- `PromptComposerRequest.hot_memory` is now optional with a safe default payload.
+
+### Fixed
+- Enforced strict `max_prompt_tokens` handling in prompt rendering with deterministic eviction order:
+  1. Oldest conversation history
+  2. Lower-ranked retrieved memories
+  3. Insight queue items
+  4. Working memory
+  5. Temporal state
+  6. Agent identity (preserved)
+- Retrieval access tracking now persists correctly:
+  - increments `access_count`
+  - updates `last_accessed`
+- Ingestion now performs semantic deduplication before writing new long-term memory:
+  - top-1 similarity check (`> 0.85`)
+  - reinforces existing memory instead of duplicating
+  - increments belief `reinforced_count` where applicable
+- Belief conflict resolution thresholds were relaxed to detect shared-entity conflicts with opposing stance/sentiment.
+
 ## [2.1.2] - 2026-02-06
 
 ### Security
@@ -22,7 +55,7 @@
 ## [2.1.0] - 2026-02-04
 
 ### Added
-- Smart wrapper with automatic fallback (vector → built-in)
+- Smart wrapper with automatic fallback (vector -> built-in)
 - Zero-configuration philosophy
 - Graceful degradation when vector not ready
 
