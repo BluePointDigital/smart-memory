@@ -1,4 +1,4 @@
-﻿---
+---
 name: smart-memory
 description: Persistent local cognitive memory for OpenClaw via a Node adapter and FastAPI engine.
 ---
@@ -26,6 +26,7 @@ Core runtime:
 Use the native OpenClaw skill package:
 - `skills/smart-memory-v25/index.js`
 - Optional hook helper: `skills/smart-memory-v25/openclaw-hooks.js`
+- Skill descriptor: `skills/smart-memory-v25/SKILL.md`
 
 Primary exports:
 - `createSmartMemorySkill(options)`
