@@ -1,6 +1,6 @@
-﻿# Prompt Engine
+# Prompt Engine
 
-This package contains the prompt composition layer used by Smart Memory v3.
+This package contains the prompt composition layer used by Smart Memory v3.1.
 
 ## Responsibilities
 
@@ -26,7 +26,7 @@ Core memory is preserved ahead of retrieved memory unless explicit trimming is e
 
 ## Key modules
 
-- `schemas.py`: canonical Pydantic contracts for prompt requests, memory records, lanes, and traces
+- `schemas.py`: canonical Pydantic contracts for prompt requests, transcript-derived memory records, lanes, and traces
 - `state_detector.py`: temporal and interaction-state generation
 - `entity_extractor.py`: lightweight prompt-time entity extraction
 - `memory_retriever.py`: retrieval wrapper with timeout and graceful fallback
@@ -50,13 +50,14 @@ This is the inspectable link between retrieval or lane state and the rendered pr
 
 ## Working-context note
 
-The current renderer still consumes `HotMemory` for the `[WORKING CONTEXT]` section. In v3, `CognitiveMemorySystem` fills that structure from the working-lane manager when the caller omits it, so prompt composition remains backward-compatible while the lane model becomes canonical.
+The current renderer still consumes `HotMemory` for the `[WORKING CONTEXT]` section. In v3.1, `CognitiveMemorySystem` fills that structure from the working-lane manager when the caller omits it, so prompt composition remains compatible while transcript-backed lane state stays canonical.
 
 ## Scope boundary
 
 This package does not own:
 
-- persistent storage
+- transcript persistence
+- durable storage
 - vector indexing implementation
 - background scheduling
 - revision-policy decisions

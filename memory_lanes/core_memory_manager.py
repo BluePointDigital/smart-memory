@@ -1,15 +1,15 @@
-﻿"""Core lane manager."""
+"""Core lane manager."""
 
 from __future__ import annotations
 
 from prompt_engine.schemas import BaseMemory, LaneName, MemoryStatus
-from storage import JSONMemoryStore, SQLiteMemoryStore
+from storage import SQLiteMemoryStore
 
 from .lane_policy import LanePolicy
 
 
 class CoreMemoryManager:
-    def __init__(self, memory_store: SQLiteMemoryStore | JSONMemoryStore | None = None, *, policy: LanePolicy | None = None) -> None:
+    def __init__(self, memory_store: SQLiteMemoryStore | None = None, *, policy: LanePolicy | None = None) -> None:
         self.memory_store = memory_store or SQLiteMemoryStore()
         self.policy = policy or LanePolicy()
 
@@ -40,7 +40,7 @@ class CoreMemoryManager:
 
     def pin_to_core(self, memory_id: str) -> None:
         memory = self.memory_store.get_memory(memory_id)
-        if memory is None:
+        if memory is None or memory.synthetic or memory.evidence_count == 0 or memory.status != MemoryStatus.ACTIVE:
             return
         self.memory_store.promote_memory(memory.id, LaneName.CORE, pinned=True, priority=max(0.9, memory.pinned_priority), reason="manual_pin")
 

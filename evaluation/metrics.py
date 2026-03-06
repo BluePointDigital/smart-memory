@@ -1,4 +1,4 @@
-﻿"""Evaluation metrics for Smart Memory v3."""
+"""Evaluation metrics for Smart Memory v3.1."""
 
 from __future__ import annotations
 

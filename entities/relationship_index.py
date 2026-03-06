@@ -1,4 +1,4 @@
-﻿"""Lightweight entity relationship hints backed by SQLite."""
+"""Lightweight transcript-derived entity relationship hints backed by SQLite."""
 
 from __future__ import annotations
 
@@ -104,3 +104,4 @@ class RelationshipIndex:
                     if len(related) >= limit:
                         return related
         return related
+

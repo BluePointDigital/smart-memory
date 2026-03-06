@@ -1,6 +1,6 @@
-﻿# Smart Memory OpenClaw Skill
+# Smart Memory OpenClaw Skill
 
-This folder contains the OpenClaw-facing skill package at `skills/smart-memory-openclaw/`. It targets the Smart Memory v3 backend running at `http://127.0.0.1:8000`.
+This folder contains the OpenClaw-facing skill package at `skills/smart-memory-openclaw/`. It targets the Smart Memory v3.1 backend running at `http://127.0.0.1:8000`.
 
 ## Files
 
@@ -15,14 +15,15 @@ This folder contains the OpenClaw-facing skill package at `skills/smart-memory-o
 - `constants.js` - shared constants
 - `types.js` - JSDoc type definitions
 
-## What changed under v3
+## What changed under v3.1
 
-- the backend now stores durable memory in SQLite
+- the backend is now transcript-first and writes transcript rows before deriving memory
+- durable memory is stored in SQLite and linked back to transcript evidence
 - retrieval is status-aware and excludes superseded or expired memories by default
 - core and working memory are first-class on the backend side
-- revision-aware ingestion can supersede older memories when state changes
+- rebuild can regenerate derived state from transcript history
 
-The skill interface stays additive and stable so existing OpenClaw wiring does not break.
+The skill interface stays stable so existing OpenClaw wiring does not break.
 
 ## Tools
 
@@ -48,7 +49,7 @@ The skill interface stays additive and stable so existing OpenClaw wiring does n
 
 ## Prompt injection
 
-Use the provided hook helpers to inject current active context before model response generation. The backend compose path now includes v3 core memory and working-context projections, so the injected prompt surface can stay stable while the underlying memory model improves.
+Use the provided hook helpers to inject current active context before model response generation. The backend compose path now includes transcript-backed core memory and working-context projections, so the injected prompt surface can stay stable while the underlying memory model improves.
 
 ## Required prompt guidance
 
@@ -61,4 +62,3 @@ Add this line to your base prompt:
 - every tool call starts with `GET /health`
 - retry queue flushes on healthy tool calls and heartbeat
 - disable OpenClaw's built-in `memory_search` and `memory_get` tools so they do not shadow Smart Memory's semantic path
-

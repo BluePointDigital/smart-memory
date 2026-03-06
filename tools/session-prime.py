@@ -1,30 +1,25 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
-session-prime.py â€” Universal CLI for Session Memory Priming
+session-prime.py - Universal CLI for transcript-first session memory priming.
 
-Query the cognitive memory server before your agent speaks.
+Query the local cognitive memory server before your agent speaks.
 
 Usage:
-    # Basic session start
     python -m tools.session_prime --agent-name "MyAgent"
-    
-    # With active projects
+
     python -m tools.session_prime \
         --agent-name "Nyx" \
         --identity "Nyx - AI assistant, soft fire" \
-        --project "Smart Memory v3" \
+        --project "Smart Memory v3.1" \
         --project "Session continuity" \
         --question "How do we make priming automatic?"
-    
-    # Save to file for agent to read
+
     python -m tools.session_prime --agent-name "MyAgent" --output context.json
-    
-    # Custom server
     python -m tools.session_prime --agent-name "MyAgent" --server http://localhost:8000
 
 Environment Variables:
-    MEMORY_SERVER_URL â€” Default server URL (default: http://127.0.0.1:8000)
-    AGENT_IDENTITY â€” Default agent identity
+    MEMORY_SERVER_URL - Default server URL (default: http://127.0.0.1:8000)
+    AGENT_IDENTITY - Default agent identity
 """
 
 import argparse
@@ -42,14 +37,12 @@ def ensure_server_running(server_url: str) -> bool:
     """Check health and attempt to start if needed."""
     import urllib.request
     
-    # Try health check
     try:
         urllib.request.urlopen(f"{server_url}/health", timeout=2)
         return True
     except Exception:
         pass
     
-    # Try to start server
     print("Memory server not running. Attempting to start...", file=sys.stderr)
     
     for rel_path in [".", "..", "./skills", "~/.openclaw/workspace"]:
@@ -119,93 +112,34 @@ def main():
     parser = argparse.ArgumentParser(
         description="Prime agent memory at session start",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s --agent-name "Nyx" --output context.json
-  %(prog)s --agent-name "MyBot" --project "Task A" --project "Task B"
-  %(prog)s --agent-name "Assistant" --identity "Helpful AI" --query "Morning check-in"
-        """,
     )
-    
-    parser.add_argument(
-        "--agent-name",
-        required=True,
-        help="Agent name/identifier",
-    )
-    parser.add_argument(
-        "--identity",
-        default=None,
-        help="Full agent identity description (defaults to agent-name)",
-    )
-    parser.add_argument(
-        "--query",
-        default="Session start",
-        help="Opening user message (default: 'Session start')",
-    )
-    parser.add_argument(
-        "--project",
-        action="append",
-        default=[],
-        help="Active project (can specify multiple)",
-    )
-    parser.add_argument(
-        "--question",
-        action="append",
-        default=[],
-        help="Working question/open thread (can specify multiple)",
-    )
-    parser.add_argument(
-        "--output",
-        default=None,
-        help="Output file (default: print to stdout)",
-    )
-    parser.add_argument(
-        "--server",
-        default=os.getenv("MEMORY_SERVER_URL", "http://127.0.0.1:8000"),
-        help="Memory server URL (default: http://127.0.0.1:8000)",
-    )
-    parser.add_argument(
-        "--raw",
-        action="store_true",
-        help="Output raw JSON only (no stderr messages)",
-    )
-    
+    parser.add_argument("--agent-name", required=True, help="Agent name")
+    parser.add_argument("--identity", help="Full agent identity string")
+    parser.add_argument("--project", action="append", default=[], help="Active project")
+    parser.add_argument("--question", action="append", default=[], help="Working question")
+    parser.add_argument("--message", default="Session start - what matters right now?", help="Current user message")
+    parser.add_argument("--server", default=os.environ.get("MEMORY_SERVER_URL", "http://127.0.0.1:8000"), help="Server URL")
+    parser.add_argument("--output", help="Optional output file")
     args = parser.parse_args()
-    
-    identity = args.identity or args.agent_name
-    
-    if not args.raw:
-        print(f"Priming memory for: {args.agent_name}", file=sys.stderr)
-    
-    # Ensure server is running
+
+    identity = args.identity or os.environ.get("AGENT_IDENTITY") or args.agent_name
+
     if not ensure_server_running(args.server):
-        result = {"status": "error", "message": "Memory server unavailable"}
-    else:
-        # Query compose
-        if not args.raw:
-            print("Querying memory server...", file=sys.stderr)
-        
-        result = query_compose(
-            server_url=args.server,
-            agent_identity=identity,
-            user_message=args.query,
-            active_projects=args.project,
-            working_questions=args.question,
-        )
-    
-    # Output
-    output = json.dumps(result, indent=2)
-    
+        sys.exit(1)
+
+    result = query_compose(
+        server_url=args.server,
+        agent_identity=identity,
+        user_message=args.message,
+        active_projects=args.project,
+        working_questions=args.question,
+    )
+
     if args.output:
-        Path(args.output).write_text(output)
-        if not args.raw:
-            print(f"Context saved to: {args.output}", file=sys.stderr)
+        Path(args.output).write_text(json.dumps(result, indent=2), encoding="utf-8")
     else:
-        print(output)
-    
-    return 0 if result.get("status") != "error" and "error" not in result else 1
+        print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
-
+    main()

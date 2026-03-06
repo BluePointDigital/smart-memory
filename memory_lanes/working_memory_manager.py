@@ -1,12 +1,12 @@
-﻿"""Working lane manager with hot-memory projection support."""
+"""Working lane manager with hot-memory projection support."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from prompt_engine.schemas import AgentState, AgentStatus, BaseMemory, HotMemory, InsightObject, LaneName
+from prompt_engine.schemas import AgentState, AgentStatus, BaseMemory, HotMemory, InsightObject, LaneName, MemoryStatus
 from smart_memory_config import LanePolicyConfig
-from storage import JSONMemoryStore, SQLiteMemoryStore
+from storage import SQLiteMemoryStore
 
 from .lane_policy import LanePolicy
 
@@ -14,7 +14,7 @@ from .lane_policy import LanePolicy
 class WorkingMemoryManager:
     def __init__(
         self,
-        memory_store: SQLiteMemoryStore | JSONMemoryStore | None = None,
+        memory_store: SQLiteMemoryStore | None = None,
         *,
         policy: LanePolicy | None = None,
         config: LanePolicyConfig | None = None,
@@ -42,6 +42,9 @@ class WorkingMemoryManager:
                 payload={"lane": LaneName.WORKING.value},
             )
             return True
+
+        if memory.status in {MemoryStatus.SUPERSEDED, MemoryStatus.EXPIRED, MemoryStatus.ARCHIVED, MemoryStatus.REJECTED}:
+            self.memory_store.demote_memory(memory.id, LaneName.WORKING)
         return False
 
     def demote_stale(self, *, now: datetime | None = None) -> list[str]:
@@ -59,7 +62,7 @@ class WorkingMemoryManager:
 
     def to_hot_memory(self, *, insights: list[InsightObject] | None = None) -> HotMemory:
         now = datetime.now(timezone.utc)
-        lane_memories = self.get_contents()
+        lane_memories = [memory for memory in self.get_contents() if not memory.synthetic and memory.evidence_count > 0]
         active_projects: list[str] = []
         working_questions: list[str] = []
         top_of_mind: list[str] = []

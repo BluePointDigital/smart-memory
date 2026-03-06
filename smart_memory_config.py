@@ -1,4 +1,4 @@
-﻿"""Configuration surface for Smart Memory v3."""
+"""Configuration surface for the Smart Memory v3.1 runtime."""
 
 from __future__ import annotations
 

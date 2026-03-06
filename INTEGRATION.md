@@ -1,60 +1,79 @@
-﻿# Agent Integration Guide
+# Agent Integration Guide
 
-Smart Memory v3 is meant to be queried by the agent itself, not treated as a passive dump of retrieved text. The integration goal is simple: the agent should wake up, check memory health, pull current context, and then respond from continuity.
+Smart Memory v3.1 is transcript-first. Your agent should treat transcript append as the durable write, and treat memory retrieval as a derived convenience layer.
 
 ## Core pattern
 
-1. Check `GET /health` before relying on memory.
-2. Prime with `POST /compose` before the first response.
-3. Use `POST /retrieve` when the topic shifts or the user asks for prior decisions, preferences, or history.
-4. Persist continuity with `POST /ingest` after meaningful turns.
-5. Use revision and lane inspection endpoints when the host needs explicit lifecycle or pinning control.
+1. Check `GET /health`.
+2. Prime with `POST /compose`.
+3. Use `POST /retrieve` when the topic shifts or the user asks for prior context.
+4. Persist turns with `POST /ingest` or `POST /transcripts/message`.
+5. Use transcript and evidence endpoints when debugging or rebuilding.
 
-## Session startup
-
-The minimum reliable startup flow is:
+## Startup flow
 
 ```text
-Agent process starts
+Agent starts
 -> GET /health
 -> POST /compose
--> hold returned prompt and memory traces in agent state
--> answer the user
+-> respond with primed context
 ```
 
 Why `/compose` first:
 
-- it includes core memory without requiring retrieval
-- it includes working context through the hot-memory compatibility layer
-- it can include retrieved memory when relevant
-- it exposes trace metadata so the host can inspect why context was included
+- it includes core lane without search
+- it includes working lane as bounded active context
+- it adds retrieved memory only after core and working context
+- it returns inclusion traces for inspection
 
-## Recommended compose request
+## Ingesting turns
+
+### Preferred high-level route
+
+Use `POST /ingest` for a user/assistant turn pair.
+
+The server will:
+
+1. append transcript rows first
+2. derive candidate memories from the appended messages
+3. run revision logic
+4. update lanes, entities, vectors, and audit events
+
+Example:
 
 ```json
 {
-  "agent_identity": "You are a persistent cognitive assistant.",
-  "current_user_message": "Session start - what are my active projects and priorities?",
-  "conversation_history": "",
-  "max_prompt_tokens": 512,
-  "max_candidate_memories": 30,
-  "max_selected_memories": 5,
-  "retrieval_timeout_ms": 500
+  "user_message": "I prefer coffee now instead of tea.",
+  "assistant_message": "Preference updated.",
+  "source_session_id": "session-42"
 }
 ```
 
-If `hot_memory`, `core_memories`, or `working_memories` are omitted, the system fills them from the canonical v3 services.
+### Low-level transcript route
 
-## Mid-session retrieval
+Use `POST /transcripts/message` when the host wants explicit per-message control.
+
+Example:
+
+```json
+{
+  "session_id": "session-42",
+  "role": "user",
+  "source_type": "conversation",
+  "content": "Deployment is blocked on config review."
+}
+```
+
+## Retrieval
 
 Call `/retrieve` when:
 
-- the user asks about earlier work, preferences, decisions, or project history
+- the user asks about prior decisions, preferences, or history
 - the agent pivots to a different project or entity cluster
-- the host wants explicit history mode via `include_history=true`
-- the host wants entity-scoped recall using `entity_scope`
+- the host wants history mode with `include_history=true`
+- the host wants entity-scoped recall with `entity_scope`
 
-Example payload:
+Example:
 
 ```json
 {
@@ -65,142 +84,52 @@ Example payload:
 }
 ```
 
-## Ingestion and revision
+## Evidence and transcript inspection
 
-Use `/ingest` after important turns. The v3 pipeline may return revision-aware actions such as `ADD`, `UPDATE`, `SUPERSEDE`, `EXPIRE`, or `NOOP`.
+Use these when debugging trust or lifecycle behavior:
 
-Use `/revise` when the host already has a fully formed candidate memory payload and wants direct revision processing.
+- `GET /transcripts/{session_id}`
+- `GET /transcript/message/{message_id}`
+- `GET /memory/{memory_id}/evidence`
+- `GET /memory/{memory_id}/history`
+- `GET /memory/{memory_id}/chain`
 
-Important contract:
+These endpoints show the transcript-backed lineage behind active, superseded, or expired memories.
 
-- semantic changes are handled with `SUPERSEDE`
-- `UPDATE` is metadata-only
-- `MERGE` is intentionally conservative
+## Rebuild operations
+
+Use rebuild when you change extraction or revision logic and want to recover derived state from transcript truth.
+
+- `POST /rebuild`
+- `POST /rebuild/{session_id}`
+
+Current implementation note:
+
+- rebuild requests replay transcript history deterministically and regenerate memory, lanes, entities, relationship hints, vectors, and the hot-memory projection
 
 ## Lane-aware integration
 
-Core and working memory are now explicit.
+- `core` is always-visible durable context
+- `working` is bounded active task context
+- `retrieved` is runtime-selected and not canonical persisted truth
 
-- `GET /lanes/core` inspects always-visible context.
-- `GET /lanes/working` inspects active task context.
-- `POST /lanes/core/{memory_id}` pins a memory to core.
-- `DELETE /lanes/core/{memory_id}` removes a pin.
-
-A good host does not rebuild its own pinning system on top of this. Let the memory backend own durable core context and bounded working context.
-
-## Revision inspection
-
-When debugging lifecycle behavior, use:
-
-- `GET /memory/{memory_id}/history`
-- `GET /memory/{memory_id}/active`
-- `GET /memory/{memory_id}/chain`
-
-These endpoints are useful when a newer preference, goal state, or task state has replaced older memory and you need to verify that the stale version stopped dominating retrieval.
+Do not build a second pinning or working-context system on top of this unless you have a specific reason.
 
 ## OpenClaw guidance
 
-The `skills/smart-memory-openclaw/` package remains the main OpenClaw wrapper, but it now talks to a v3 backend underneath.
+The OpenClaw wrapper remains in [skills/smart-memory-openclaw](/D:/Users/JamesMSI/Desktop/LLM%20Projects/Smart%20Memory/smart-memory/.release-repo/skills/smart-memory-openclaw).
 
-Recommended pattern:
+Recommended host behavior:
 
-- start the Smart Memory server with the Node adapter or your own process manager
-- use the skill for `memory_search`, `memory_commit`, and `memory_insights`
-- use the prompt injection helper before response generation so the model sees current active context
-
-Still disable OpenClaw's built-in file-search memory tools to avoid shadowing semantic retrieval:
-
-```bash
-openclaw config set tools.deny '["memory_search", "memory_get"]'
-openclaw gateway restart
-```
-
-## Python example
-
-```python
-import requests
-
-BASE_URL = "http://127.0.0.1:8000"
-
-health = requests.get(f"{BASE_URL}/health", timeout=5)
-health.raise_for_status()
-
-prompt = requests.post(
-    f"{BASE_URL}/compose",
-    json={
-        "agent_identity": "You are a persistent assistant.",
-        "current_user_message": "Session start - what matters right now?",
-        "conversation_history": "",
-        "max_prompt_tokens": 512,
-    },
-    timeout=10,
-)
-prompt.raise_for_status()
-context = prompt.json()
-
-retrieval = requests.post(
-    f"{BASE_URL}/retrieve",
-    json={"user_message": "What are the current blockers?"},
-    timeout=10,
-)
-retrieval.raise_for_status()
-
-requests.post(
-    f"{BASE_URL}/ingest",
-    json={
-        "user_message": "We finished the schema review.",
-        "assistant_message": "Noted.",
-        "source_session_id": "session-123",
-        "source_message_ids": ["msg-99"],
-    },
-    timeout=10,
-).raise_for_status()
-```
-
-## Node example
-
-```js
-import memory from "smart-memory";
-
-await memory.start();
-
-const primed = await memory.getPromptContext({
-  agent_identity: "You are a persistent assistant.",
-  current_user_message: "Session start - summarize active context.",
-  conversation_history: "",
-  max_prompt_tokens: 512,
-});
-
-const retrieval = await memory.retrieveContext({
-  user_message: "What did we decide about deployment?",
-  conversation_history: "",
-});
-
-await memory.ingestMessage({
-  user_message: "Deployment is blocked on a config diff review.",
-  assistant_message: "Captured.",
-  source_session_id: "session-abc",
-  source_message_ids: ["turn-12"],
-});
-```
-
-## Operational checks
-
-Use these during integration and debugging:
-
-- `GET /health`
-- `GET /memories`
-- `GET /memory/{memory_id}`
-- `GET /insights/pending`
-- `GET /lanes/core`
-- `GET /lanes/working`
-- `GET /eval/case/{case_id}`
+- use the skill for commit/search/insight workflows
+- keep transcript append and memory inspection local
+- let Smart Memory own revision logic and lane derivation
+- treat `hot_memory.json` as a compatibility projection, not a source of truth
 
 ## Failure handling
 
-If the memory service is unavailable, keep the agent running but be explicit that continuity is degraded. Do not silently fabricate prior context.
+If the local service is unavailable, continue without fabricated continuity and say so explicitly.
 
 Example:
 
 `I could not reach the local memory service, so I am continuing without reliable prior context.`
-

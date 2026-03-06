@@ -39,18 +39,21 @@ class HotMemoryStore:
             insight_queue=[],
         )
 
+    def _default_bundle(self) -> HotMemoryBundle:
+        return HotMemoryBundle(
+            hot_memory=self._default_hot_memory(),
+            reinforcement={
+                "active_projects": {},
+                "working_questions": {},
+                "top_of_mind": {},
+            },
+            retrieval_counts={},
+            memory_refs=[],
+        )
+
     def load_bundle(self) -> HotMemoryBundle:
         if not self.path.exists():
-            return HotMemoryBundle(
-                hot_memory=self._default_hot_memory(),
-                reinforcement={
-                    "active_projects": {},
-                    "working_questions": {},
-                    "top_of_mind": {},
-                },
-                retrieval_counts={},
-                memory_refs=[],
-            )
+            return self._default_bundle()
 
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         hot_memory = HotMemory.model_validate(payload["hot_memory"])
@@ -86,6 +89,11 @@ class HotMemoryStore:
         bundle = self.load_bundle()
         bundle.hot_memory = hot_memory
         self.save_bundle(bundle)
+
+    def reset(self) -> HotMemory:
+        bundle = self._default_bundle()
+        self.save_bundle(bundle)
+        return bundle.hot_memory
 
     def add_memory_ref(self, memory_id: str, cap: int = 200) -> None:
         bundle = self.load_bundle()

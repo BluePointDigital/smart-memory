@@ -1,4 +1,4 @@
-﻿"""Retrieval pipeline with status-aware filtering and lane/entity boosts."""
+"""Retrieval pipeline with status-aware filtering and lane/entity boosts."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from embeddings import TextEmbedder, create_default_embedder
 from entities import EntityAliasResolver, RelationshipIndex
 from prompt_engine.schemas import BaseMemory, LaneName, MemoryStatus
 from smart_memory_config import SmartMemoryV3Config
-from storage import JSONMemoryStore, SQLiteMemoryStore, VectorIndexStore
+from storage import SQLiteMemoryStore, VectorIndexStore
 
 from .entity_detector import detect_entities_for_retrieval
 from .reranker import RankedCandidate, RetrievalCandidate, rerank_candidates
@@ -39,25 +39,25 @@ class RetrievalPipeline:
     def __init__(
         self,
         *,
-        json_store: JSONMemoryStore | SQLiteMemoryStore | None = None,
+        memory_store: SQLiteMemoryStore | None = None,
+        json_store: SQLiteMemoryStore | None = None,
         vector_store: VectorIndexStore | None = None,
         embedder: TextEmbedder | None = None,
         entity_resolver: EntityAliasResolver | None = None,
         config: RetrievalPipelineConfig = RetrievalPipelineConfig(),
     ) -> None:
-        self.json_store = json_store or SQLiteMemoryStore(config.v3.storage.sqlite_path)
-        self.vector_store = vector_store or VectorIndexStore(
-            sqlite_path=getattr(self.json_store, "sqlite_path", config.v3.storage.sqlite_path)
-        )
+        self.memory_store = memory_store or json_store or SQLiteMemoryStore(config.v3.storage.sqlite_path)
+        self.json_store = self.memory_store
+        self.vector_store = vector_store or VectorIndexStore(sqlite_path=self.memory_store.sqlite_path)
         self.embedder = embedder or create_default_embedder()
         self.entity_resolver = entity_resolver or EntityAliasResolver()
-        self.relationship_index = RelationshipIndex(getattr(self.json_store, "sqlite_path", config.v3.storage.sqlite_path))
+        self.relationship_index = RelationshipIndex(self.memory_store.sqlite_path)
         self.config = config
 
     def _lane_boosts(self) -> dict[str, float]:
         boosts: dict[str, float] = {}
         for lane_name, boost in ((LaneName.CORE, 1.0), (LaneName.WORKING, 0.75)):
-            for memory in self.json_store.get_lane_contents(lane_name):
+            for memory in self.memory_store.get_lane_contents(lane_name):
                 boosts[str(memory.id)] = max(boosts.get(str(memory.id), 0.0), boost)
         return boosts
 
@@ -73,7 +73,7 @@ class RetrievalPipeline:
                         "access_count": memory.access_count + 1,
                     }
                 )
-                self.json_store.update_memory(touched_memory)
+                self.memory_store.update_memory(touched_memory)
                 updated_selected.append(RankedCandidate(memory=touched_memory, score=ranked.score, vector_score=ranked.vector_score))
             except Exception:
                 updated_selected.append(ranked)
@@ -122,7 +122,7 @@ class RetrievalPipeline:
 
             candidates: list[RetrievalCandidate] = []
             for hit in vector_hits:
-                memory = self.json_store.get_memory(hit.memory_id)
+                memory = self.memory_store.get_memory(hit.memory_id)
                 if memory is None:
                     continue
                 if not self._status_allowed(memory, include_history=include_history):
@@ -155,7 +155,7 @@ class RetrievalPipeline:
             )
             selected = self._mark_selected_as_accessed(selected, accessed_at=now)
 
-            self.json_store.add_audit_event(
+            self.memory_store.add_audit_event(
                 "retrieval_executed",
                 memory_ids=[str(item.memory.id) for item in selected],
                 action="RETRIEVE",

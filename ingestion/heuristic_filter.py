@@ -20,6 +20,26 @@ EMOTIONAL_TERMS = {
     "critical",
 }
 
+DECISION_TERMS = {
+    "prefer",
+    "like",
+    "dislike",
+    "avoid",
+    "goal",
+    "launch",
+    "launched",
+    "blocked",
+    "completed",
+    "resolved",
+    "abandoned",
+    "decided",
+    "now",
+    "instead",
+    "changed",
+    "stopped",
+    "switched",
+}
+
 NAMED_ENTITY_PATTERN = re.compile(r"\b[A-Z][a-z]{2,}\b")
 PROJECT_PATTERN = re.compile(r"\bproj[_\-][a-z0-9_\-]+\b", flags=re.IGNORECASE)
 
@@ -55,6 +75,9 @@ def evaluate_heuristics(
 
     if any(term in text_lower for term in EMOTIONAL_TERMS):
         triggers.append("emotional_language")
+
+    if any(term in text_lower for term in DECISION_TERMS):
+        triggers.append("decision_marker")
 
     if "?" in user_message:
         triggers.append("user_question")

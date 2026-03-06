@@ -1,11 +1,11 @@
-﻿#!/usr/bin/env python3
-"""One-off importer: ingest OpenClaw workspace markdown memories into Smart Memory v3.
+#!/usr/bin/env python3
+"""One-off importer: ingest OpenClaw workspace markdown memories into Smart Memory v3.1.
 
 - Reads MEMORY.md and memory/*.md
 - Chunks by headings/blank lines to avoid giant payloads
 - Sends to POST /ingest on localhost:8000
 
-Safe to re-run: ingestion pipeline performs semantic dedup.
+Safe to re-run: transcript-first ingestion still performs semantic dedup and revision-aware writes.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ def chunk_markdown(text: str, *, max_chars: int = 1800) -> list[str]:
     if not text:
         return []
 
-    # Split on blank lines and headings; keep delimiters implicit.
     parts = re.split(r"\n\s*\n|(?=\n#{1,6} )", text)
     parts = [p.strip() for p in parts if p and p.strip()]
 
@@ -44,7 +43,6 @@ def chunk_markdown(text: str, *, max_chars: int = 1800) -> list[str]:
 
     for p in parts:
         if len(p) > max_chars:
-            # Hard-wrap huge blocks.
             for i in range(0, len(p), max_chars):
                 sub = p[i : i + max_chars].strip()
                 if sub:
@@ -58,7 +56,6 @@ def chunk_markdown(text: str, *, max_chars: int = 1800) -> list[str]:
 
     flush()
 
-    # Filter tiny chunks (heuristics require min words).
     out = []
     for c in chunks:
         if len(c.split()) >= 8:
@@ -78,89 +75,66 @@ def ingest_chunk(
 ) -> dict:
     payload = {
         "user_message": content,
-        "assistant_message": "",
-        "timestamp": timestamp.isoformat() if timestamp else None,
-        "source": "openclaw_workspace",
-        "participants": ["user", "assistant"],
+        "assistant_message": "Imported from workspace markdown.",
+        "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
+        "source": "imported",
         "metadata": {
-            "source_file": source_file,
+            "imported_from": source_file,
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
-            "importer": "ingest_workspace_memories.py",
         },
     }
-    r = session.post(url, json=payload, timeout=60)
-    r.raise_for_status()
-    return r.json()
+    response = session.post(f"{url.rstrip('/')}/ingest", json=payload, timeout=20)
+    response.raise_for_status()
+    return response.json()
+
+
+def iter_markdown_files(workspace: Path) -> list[Path]:
+    paths: list[Path] = []
+    memory_md = workspace / "MEMORY.md"
+    if memory_md.exists():
+        paths.append(memory_md)
+
+    memory_dir = workspace / "memory"
+    if memory_dir.exists():
+        paths.extend(sorted(memory_dir.rglob("*.md")))
+
+    return paths
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--base-url", default="http://127.0.0.1:8000")
-    ap.add_argument(
-        "--workspace",
-        default=str(Path.home() / ".openclaw" / "workspace"),
-        help="Path to OpenClaw workspace (default: ~/.openclaw/workspace)",
-    )
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="Import markdown memory files into Smart Memory")
+    parser.add_argument("--workspace", default=os.getcwd(), help="Workspace root")
+    parser.add_argument("--server", default="http://127.0.0.1:8000", help="Smart Memory server URL")
+    args = parser.parse_args()
 
-    base = Path(os.path.expanduser(args.workspace)).resolve()
-    files: list[Path] = []
-    if (base / "MEMORY.md").exists():
-        files.append(base / "MEMORY.md")
-    mem_dir = base / "memory"
-    if mem_dir.exists():
-        files.extend(sorted(p for p in mem_dir.glob("*.md") if p.is_file()))
-
+    workspace = Path(args.workspace).resolve()
+    files = iter_markdown_files(workspace)
     if not files:
-        print("No memory markdown files found.")
-        return 1
+        print("No markdown memory files found.")
+        return 0
 
-    ingest_url = args.base_url.rstrip("/") + "/ingest"
-
-    session = requests.Session()
-
-    total_stored = 0
-    total_seen = 0
-
-    for f in files:
-        text = f.read_text(encoding="utf-8", errors="replace")
-        chunks = chunk_markdown(text)
-        ts = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
-
-        print(f"\n==> {f.relative_to(base)} ({len(chunks)} chunks)")
-
-        for i, c in enumerate(chunks, start=1):
-            total_seen += 1
-            if args.dry_run:
-                print(f"  [dry] chunk {i}/{len(chunks)}: {len(c)} chars")
-                continue
-
-            try:
-                res = ingest_chunk(
+    imported = 0
+    with requests.Session() as session:
+        for path in files:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            chunks = chunk_markdown(text)
+            for index, chunk in enumerate(chunks, start=1):
+                ingest_chunk(
                     session,
-                    ingest_url,
-                    content=c,
-                    timestamp=ts,
-                    source_file=str(f.relative_to(base)),
-                    chunk_index=i,
+                    args.server,
+                    content=chunk,
+                    timestamp=datetime.now(timezone.utc),
+                    source_file=str(path.relative_to(workspace)),
+                    chunk_index=index,
                     total_chunks=len(chunks),
                 )
-            except Exception as e:  # noqa: BLE001
-                print(f"  [ERR] chunk {i}/{len(chunks)}: {e}")
-                continue
+                imported += 1
+                print(f"Imported {path.name} chunk {index}/{len(chunks)}")
 
-            stored = bool(res.get("stored"))
-            if stored:
-                total_stored += 1
-            reason = res.get("reason", "")
-            print(f"  [{'OK' if stored else '--'}] chunk {i}/{len(chunks)}: {reason}")
-
-    print(f"\nDone. Stored {total_stored}/{total_seen} chunks.")
+    print(f"Imported {imported} chunks.")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

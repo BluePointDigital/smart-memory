@@ -1,4 +1,4 @@
-﻿"""SQLite-backed entity registry for Smart Memory v3."""
+"""SQLite-backed entity registry for Smart Memory v3.1."""
 
 from __future__ import annotations
 
@@ -106,4 +106,5 @@ class EntityRegistry:
         with self._connect() as connection:
             rows = connection.execute("SELECT entity_id FROM entity_registry ORDER BY entity_id").fetchall()
         return [str(row["entity_id"]) for row in rows]
+
 

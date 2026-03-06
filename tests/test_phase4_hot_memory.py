@@ -31,12 +31,15 @@ def test_hot_memory_caps_are_enforced(tmp_path):
 
         memory = EpisodicMemory(
             content=f"high importance summary {i}",
-            importance=0.9,
+            importance_score=0.9,
             entities=[f"proj_{i}"],
             relations=[],
             emotional_valence=0.0,
             emotional_intensity=0.0,
             source=MemorySource.CONVERSATION,
+            source_session_id=f"sess_{i}",
+            source_message_ids=[f"msg_{i}"],
+            evidence_count=1,
             participants=["user", "assistant"],
         )
         manager.register_high_importance_memory(memory)

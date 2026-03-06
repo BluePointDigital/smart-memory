@@ -46,18 +46,23 @@ class ReflectionAgent:
                 beliefs.append(
                     BeliefMemory(
                         content=f"Inferred belief from reflection: {memory.content}",
-                        importance=min(1.0, max(0.55, memory.importance)),
+                        importance_score=min(1.0, max(0.55, memory.importance_score)),
                         created_at=now,
-                        last_accessed=now,
+                        updated_at=now,
+                        last_accessed_at=now,
                         access_count=0,
-                        schema_version="2.0",
+                        schema_version="3.1",
                         entities=memory.entities,
                         relations=memory.relations,
                         emotional_valence=memory.emotional_valence,
                         emotional_intensity=memory.emotional_intensity,
                         source=MemorySource.REFLECTION,
-                        confidence=min(1.0, max(0.55, memory.importance)),
+                        source_session_id=None,
+                        source_message_ids=[],
+                        confidence=min(1.0, max(0.55, memory.importance_score)),
                         reinforced_count=1,
+                        derivation_method="system",
+                        synthetic=True,
                     )
                 )
 
