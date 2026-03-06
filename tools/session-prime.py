@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-session-prime.py — Universal CLI for Session Memory Priming
+session-prime.py â€” Universal CLI for Session Memory Priming
 
 Query the cognitive memory server before your agent speaks.
 
@@ -12,7 +12,7 @@ Usage:
     python -m tools.session_prime \
         --agent-name "Nyx" \
         --identity "Nyx - AI assistant, soft fire" \
-        --project "Smart Memory v2" \
+        --project "Smart Memory v3" \
         --project "Session continuity" \
         --question "How do we make priming automatic?"
     
@@ -23,8 +23,8 @@ Usage:
     python -m tools.session_prime --agent-name "MyAgent" --server http://localhost:8000
 
 Environment Variables:
-    MEMORY_SERVER_URL — Default server URL (default: http://127.0.0.1:8000)
-    AGENT_IDENTITY — Default agent identity
+    MEMORY_SERVER_URL â€” Default server URL (default: http://127.0.0.1:8000)
+    AGENT_IDENTITY â€” Default agent identity
 """
 
 import argparse
@@ -208,3 +208,4 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
+

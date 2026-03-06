@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const { SESSION_ARC_SUMMARY_PROMPT } = require("./constants");
 
@@ -75,7 +75,7 @@ class SessionArcCapturer {
         trigger,
       });
     } catch (error) {
-      this.logger.warn?.("[smart-memory-v25] session arc summarization failed:", error.message);
+      this.logger.warn?.("[smart-memory-openclaw] session arc summarization failed:", error.message);
       return null;
     }
 
@@ -94,7 +94,7 @@ class SessionArcCapturer {
         tags: ["session_arc", isoDate],
       });
     } catch (error) {
-      this.logger.warn?.("[smart-memory-v25] session arc commit failed:", error.message);
+      this.logger.warn?.("[smart-memory-openclaw] session arc commit failed:", error.message);
       return null;
     }
   }
@@ -140,3 +140,4 @@ module.exports = {
   SessionArcCapturer,
   normalizeConversationTurns,
 };
+

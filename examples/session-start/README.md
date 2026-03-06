@@ -1,112 +1,74 @@
-# Session Start Examples
+﻿# Session Start Examples
 
-These examples show how to implement **automatic memory priming** at session start for different agent frameworks.
+These examples show how to prime Smart Memory v3 before the first response of a new session.
 
-## The Pattern
+## Why this matters
 
-Every agent should query memory **before** generating its first response:
+If the agent speaks before querying memory, the session starts blank. The correct pattern is:
 
-```
-User starts session
-    ↓
-Agent wakes up
-    ↓
-Query /compose endpoint
-    ↓
-Hold context in working memory
-    ↓
-Generate grounded greeting
+```text
+session starts
+-> check /health
+-> call /compose
+-> hold returned prompt and traces in agent state
+-> answer the user
 ```
 
-## Without This Pattern
+## What `/compose` gives you in v3
 
-```
-User: /new
-Agent: "Hello! How can I help you?"  ← Blank slate. No continuity.
-```
+A compose response can include:
 
-## With This Pattern
+- core memory that should always stay visible
+- working context projected from the working lane
+- retrieved memories selected for the current message
+- temporal state and interaction state
+- memory traces explaining what was included and why
 
-```
-User: /new
-Agent: "Hey James. 🌙 We were just finishing the memory priming script. 
-        What's next?"  ← Grounded in actual history.
-```
+## OpenClaw
 
-## Framework-Specific Implementations
+Use the session-start helpers in this directory together with the Smart Memory skill.
 
-### OpenClaw
-**File:** `openclaw-prime.sh`
+Recommended sequence:
 
-Add to your `AGENTS.md` under "Every Session":
+1. ensure the local API is running
+2. call `/compose` with a session-start user message
+3. keep the returned prompt in agent state
+4. only then generate the first greeting
 
-```bash
-# Prime memory before greeting
-bash .openclaw/session-prime-memory.sh
-
-# Read the primed context
-Read `.session-memory-context.json`
-```
-
-See full example in [AGENT-FRAMEWORKS.md](../docs/AGENT-FRAMEWORKS.md#openclaw)
-
-### Python (LangChain, Custom)
-**File:** `generic-python.py`
+## Python example
 
 ```python
 from session_prime import prime_memory
 
-# At agent startup
 context = prime_memory(agent_identity="MyAgent")
-prompt = context["prompt"]  # Full composed prompt with memory
+prompt = context["prompt"]
+traces = context.get("memory_traces", [])
 ```
 
-### Node.js
-**File:** `nodejs-agent.js`
+## Node example
 
 ```javascript
 const { primeMemory } = require('./nodejs-agent');
 
-// At agent startup
-const context = await primeMemory({ agentIdentity: 'MyBot' });
+const context = await primeMemory({ agentIdentity: 'MyAgent' });
+console.log(context.prompt);
 ```
 
-## What Gets Loaded
+## What to look for during validation
 
-The `/compose` endpoint returns a structured prompt including:
+Good signs:
 
-- **Agent Identity** — Who you are (from the request)
-- **Temporal State** — Current time, time since last interaction
-- **Working Context** — Active projects, working questions, top-of-mind items
-- **Selected Memories** — Relevant long-term memories (episodic, semantic, beliefs, goals)
-- **Conversation History** — Recent exchanges (empty at session start)
+- the first reply references current active work
+- the compose payload includes core or retrieved memory when expected
+- `memory_traces` explain inclusion clearly
 
-## Customization
+Bad signs:
 
-Pass additional context in your request:
+- the agent greets generically with no continuity
+- the startup path never calls `/compose`
+- the host drops the compose response instead of holding it in session state
 
-```json
-{
-  "agent_identity": "Nyx - soft fire, Solveil sanctuary keeper",
-  "current_user_message": "Session start",
-  "hot_memory": {
-    "agent_state": { ... },
-    "active_projects": ["Project A", "Project B"],
-    "working_questions": ["How do we solve X?"],
-    "top_of_mind": ["Important context"]
-  }
-}
-```
+## Related docs
 
-## Error Handling
-
-All examples include graceful degradation:
-- If server isn't running → attempt to start it
-- If server won't start → return error status, continue without persistence
-- Agent should note this in greeting if relevant
-
-## See Also
-
-- [INTEGRATION.md](../INTEGRATION.md) — Full integration guide
-- [AGENT-FRAMEWORKS.md](../docs/AGENT-FRAMEWORKS.md) — Framework-specific wiring
-- [../tools/session-prime.py](../tools/session-prime.py) — Universal CLI tool
+- [INTEGRATION.md](/D:/Users/JamesMSI/Desktop/LLM%20Projects/Smart%20Memory/smart-memory/.release-repo/INTEGRATION.md)
+- [docs/AGENT-FRAMEWORKS.md](/D:/Users/JamesMSI/Desktop/LLM%20Projects/Smart%20Memory/smart-memory/.release-repo/docs/AGENT-FRAMEWORKS.md)

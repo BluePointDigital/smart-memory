@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""One-off importer: ingest OpenClaw workspace markdown memories into Smart Memory v2.
+﻿#!/usr/bin/env python3
+"""One-off importer: ingest OpenClaw workspace markdown memories into Smart Memory v3.
 
 - Reads MEMORY.md and memory/*.md
 - Chunks by headings/blank lines to avoid giant payloads
@@ -163,3 +163,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

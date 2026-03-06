@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-Hot Memory Manager for Smart Memory v2.1
+Hot Memory Manager compatibility helper for Smart Memory v3
 Provides persistent hot memory storage and automatic updates.
 """
 
@@ -210,7 +210,7 @@ if __name__ == "__main__":
             agent_status="engaged",
             last_background_task="initialization"
         )
-        print("✓ Hot memory initialized with example context")
+        print("âœ“ Hot memory initialized with example context")
         print(json.dumps(state, indent=2, default=str))
     
     elif cmd == "compose":
@@ -219,9 +219,10 @@ if __name__ == "__main__":
     
     elif cmd == "auto" and len(sys.argv) >= 4:
         state = auto_update_from_context(sys.argv[2], sys.argv[3])
-        print("✓ Auto-updated from conversation")
+        print("âœ“ Auto-updated from conversation")
         print(json.dumps(state, indent=2, default=str))
     
     else:
         print(f"Unknown command: {cmd}")
         sys.exit(1)
+

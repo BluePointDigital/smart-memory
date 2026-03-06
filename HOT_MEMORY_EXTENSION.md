@@ -1,148 +1,60 @@
-# Hot Memory Extension for Smart Memory v2.1
+﻿# Hot Memory and Working Context in v3
 
-## Summary
-This extension adds persistent "hot memory" (working context) to Smart Memory v2.1. Hot memory survives between sessions and appears in every prompt's `[WORKING CONTEXT]` section.
+Smart Memory v3 keeps the existing hot-memory file, but its role has changed.
 
-## Files Added/Modified
+It is no longer the primary long-term working-memory mechanism. The canonical durable backend is SQLite, and the v3 working lane owns task continuity. `data/hot_memory/hot_memory.json` remains as a compatibility projection used by the current runtime and prompt renderer.
 
-### New Files
-1. `hot_memory_manager.py` - Core hot memory persistence and auto-update logic
-2. `memory_adapter.py` - API wrapper that auto-includes hot memory in compose calls
-3. `smem-hook.sh` - Shell hook for post-conversation updates
-4. `hot_memory_state.json` - Persistent storage (auto-created)
+## What hot memory does now
 
-### Modified
-None (this is an extension, not a core modification)
+The compatibility layer still stores:
 
-## Key Features
+- `active_projects`
+- `working_questions`
+- `top_of_mind`
+- `insight_queue`
+- `agent_state`
+- reinforcement timestamps and retrieval counters
+- recent memory references
 
-### 1. Persistent Working Context
-Hot memory stores:
-- `active_projects` - Top 5 current projects with descriptions
-- `working_questions` - Open questions being explored
-- `top_of_mind` - Immediate priorities/notes
-- `insight_queue` - Live pending insights from background cognition
-- `agent_state` - Status, timestamps, last background task
+This keeps older prompt composition and background-cognition paths working while v3 lane managers own the real promotion and demotion decisions.
 
-### 2. Auto-Update from Conversations
-- Detects project mentions (customizable keyword list)
-- Adds questions (anything with `?`) to working_questions
-- Prevents duplicate projects via key-based matching
-- Updates timestamp and status on every interaction
+## Relationship to working lane
 
-### 3. API Integration
-The `memory_adapter.py` provides:
-```python
-compose_with_hot_memory(agent_identity, user_message)
-# Automatically includes hot memory in /compose calls
+- The working lane stores active memory membership in SQLite.
+- `WorkingMemoryManager` decides which durable memories belong in working context.
+- `CognitiveMemorySystem.compose_prompt()` projects working-lane state into the hot-memory structure if the caller does not provide one.
+- The prompt renderer then renders `[WORKING CONTEXT]` from that projected structure.
 
-ingest_and_update(user_message, assistant_message)
-# Ingests to LTM + updates hot memory in one call
+In practice, this means the working lane is the source of truth and hot memory is the compatibility transport.
+
+## Relationship to core lane
+
+Core memories are not mixed into the generic hot-memory block. They are rendered separately as `[CORE MEMORY]` so pinned, durable context remains visible and inspectable.
+
+## Cooling and decay
+
+`hot_memory/store.py` still supports cooling logic for active projects, working questions, and top-of-mind items. In v3, those controls complement lane demotion policy rather than replacing it.
+
+## Current file location
+
+```text
+data/hot_memory/hot_memory.json
 ```
 
-## Bug Fix: Duplicate Prevention
-Original code checked `project_desc not in projects` which failed when descriptions differed (e.g., "Mobile App - iOS development" vs "Mobile App - iOS and Android development").
+## Debugging tips
 
-**Fixed by:** `_project_exists()` function that extracts project keys (text before " - ") and compares normalized keys.
+Use these endpoints to understand what is happening:
 
-```python
-def _project_exists(projects: list[str], project_key: str) -> bool:
-    """Check if a project already exists by its key identifier."""
-    project_key_lower = project_key.lower()
-    for project in projects:
-        existing_key = project.split(" - ")[0].lower() if " - " in project else project.lower()
-        if existing_key == project_key_lower:
-            return True
-    return False
-```
+- `GET /lanes/working` to inspect the canonical working lane
+- `GET /lanes/core` to inspect pinned durable context
+- `GET /insights/pending` to inspect the live insight queue
+- `POST /compose` to verify what the renderer actually includes
 
-## Usage
+## Important boundary
 
-### Initialize hot memory
-```bash
-python3 hot_memory_manager.py init
-```
+Do not build new durable-memory features directly on top of `hot_memory.json`. For v3 development:
 
-### After conversations
-```bash
-# Quick update (hot memory only)
-./smem-hook.sh "user message" "assistant response"
-
-# Full update (hot memory + LTM ingestion)
-python3 memory_adapter.py ingest -m "user message" -a "assistant response"
-```
-
-### Compose with hot memory
-```bash
-python3 memory_adapter.py compose -m "What are my priorities?"
-```
-
-## Customizing Project Detection
-
-Edit `auto_update_from_context()` in `hot_memory_manager.py` to match your domain:
-
-```python
-project_definitions = [
-    # Example: Product/Platform projects
-    (["mobile app", "ios app", "android app"], "Mobile App", "Mobile App - cross-platform development"),
-    (["web platform", "web app"], "Web Platform", "Web Platform - frontend and backend development"),
-    
-    # Example: Infrastructure
-    (["infrastructure", "infra", "deployment"], "Infrastructure", "Infrastructure - hosting, CI/CD, DevOps"),
-    
-    # Add your own project keywords here
-]
-```
-
-## Integration Path
-
-### Option A: Fork + PR to Upstream (Recommended)
-1. Fork https://github.com/BluePointDigital/smart-memory/
-2. Add these files to a `contrib/hot-memory/` directory
-3. Submit PR with:
-   - Hot memory extension module
-   - Updated README with usage docs
-   - Tests for duplicate prevention
-
-### Option B: Separate Package
-Create `smart-memory-hot` as a companion package that depends on smart-memory and provides the hot memory layer.
-
-### Option C: Documentation Patch
-If upstream isn't accepting changes, document as a "recommended extension" in the wiki.
-
-## Testing
-
-### Test duplicate prevention
-```bash
-# Initialize
-python3 hot_memory_manager.py init
-
-# Try to add duplicate project
-./smem-hook.sh "Working on the mobile app today" "OK"
-./smem-hook.sh "Continuing mobile app development" "Great"
-
-# Verify only one "Mobile App" entry
-python3 hot_memory_manager.py get | grep "Mobile App"
-```
-
-### Test new project addition
-```bash
-./smem-hook.sh "Starting the infrastructure migration" "Let's do it"
-# Should add Infrastructure to active_projects
-```
-
-## Token Impact
-
-Hot memory adds ~400 tokens to composed prompts (configurable):
-- 5 active projects: ~150 tokens
-- 4 working questions: ~100 tokens  
-- 3 top-of-mind items: ~75 tokens
-- Agent state + overhead: ~75 tokens
-
-This fits within the default token allocation's `working_memory` budget.
-
----
-
-**Created:** 2026-03-05
-**Smart Memory Version:** v2.1
-**License:** Same as Smart Memory (MIT)
+- durable memory belongs in SQLite
+- revision logic belongs in the ingestion and revision layers
+- working continuity belongs in working-lane policy
+- hot memory exists to keep the current runtime and prompt surface stable while the v3 internals evolve

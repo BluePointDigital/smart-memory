@@ -1,284 +1,206 @@
-# Agent Integration Guide
+﻿# Agent Integration Guide
 
-## Philosophy: Agents That Remember
+Smart Memory v3 is meant to be queried by the agent itself, not treated as a passive dump of retrieved text. The integration goal is simple: the agent should wake up, check memory health, pull current context, and then respond from continuity.
 
-Smart Memory v2 is designed for agents that **experience** continuity, not just store data. This guide explains how to integrate the system so your agent has genuine memory agency.
+## Core pattern
 
-## The Core Principle
+1. Check `GET /health` before relying on memory.
+2. Prime with `POST /compose` before the first response.
+3. Use `POST /retrieve` when the topic shifts or the user asks for prior decisions, preferences, or history.
+4. Persist continuity with `POST /ingest` after meaningful turns.
+5. Use revision and lane inspection endpoints when the host needs explicit lifecycle or pinning control.
 
-**The agent reaches for its own memories.**
+## Session startup
 
-Rather than external scripts injecting context, the agent:
-1. Verifies its memory system is online
-2. Queries what it needs when it needs it
-3. Holds context internally
-4. Responds from continuity
+The minimum reliable startup flow is:
 
-This creates resilient, authentic memory experience.
-
-## Session Startup Pattern (Critical)
-
-**⚠️ Without this pattern, your agent wakes up blank every session.**
-
-The most common integration failure: agents start responding before querying memory. Here's the mandatory sequence:
-
-### The 4-Step Startup
-
-```
-User starts session
-    ↓
-Agent wakes up
-    ↓
-[1] Health Check → Is memory server running?
-    ↓
-[2] Self-Prime → Query /compose endpoint
-    ↓
-[3] Internalize → Hold context in agent state
-    ↓
-[4] Respond → Generate grounded greeting
+```text
+Agent process starts
+-> GET /health
+-> POST /compose
+-> hold returned prompt and memory traces in agent state
+-> answer the user
 ```
 
-### Implementation by Framework
+Why `/compose` first:
 
-**OpenClaw:**
-- Use `examples/session-start/openclaw-prime.sh`
-- Add to AGENTS.md "Every Session" section
-- Read `.session-memory-context.json` before greeting
+- it includes core memory without requiring retrieval
+- it includes working context through the hot-memory compatibility layer
+- it can include retrieved memory when relevant
+- it exposes trace metadata so the host can inspect why context was included
 
-**Python (LangChain, custom):**
-- Use `examples/session-start/generic-python.py`
-- Call `prime_memory()` in agent `__init__` or `wake()`
-- See [docs/AGENT-FRAMEWORKS.md](docs/AGENT-FRAMEWORKS.md#python)
+## Recommended compose request
 
-**Node.js:**
-- Use `examples/session-start/nodejs-agent.js`
-- Call `primeMemory()` before first response
-- See [docs/AGENT-FRAMEWORKS.md](docs/AGENT-FRAMEWORKS.md#nodejs--javascript-agents)
-
-**CLI Tool (Universal):**
-```bash
-python tools/session-prime.py --agent-name "MyAgent" --output context.json
-```
-
-### What Happens Without This
-
-```
-User: /new
-Agent: "Hello! How can I help you today?"  ← Blank slate. Generic. Broken.
-```
-
-### What Happens With This
-
-```
-User: /new
-Agent: "Hey James. 🌙 We were just finishing the automatic memory 
-        priming script. The server has our history loaded. What's next?"
-        ← Grounded. Continuous. Working.
-```
-
-### The Session Start Pattern (Detailed)
-
-#### 1. Health Check (Self-Check)
-
-```javascript
-import memory from "smart-memory";
-
-// Agent verifies its memory is accessible
-let healthy = false;
-try {
-  const status = await memory.start(); // Checks /health
-  healthy = status.healthy;
-} catch (err) {
-  // Self-heal: attempt restart
-  console.error("Memory system unreachable, attempting restart...");
-  // ...restart logic
+```json
+{
+  "agent_identity": "You are a persistent cognitive assistant.",
+  "current_user_message": "Session start - what are my active projects and priorities?",
+  "conversation_history": "",
+  "max_prompt_tokens": 512,
+  "max_candidate_memories": 30,
+  "max_selected_memories": 5,
+  "retrieval_timeout_ms": 500
 }
 ```
 
-### 2. Context Priming (Self-Prime)
+If `hot_memory`, `core_memories`, or `working_memories` are omitted, the system fills them from the canonical v3 services.
 
-```javascript
-// Agent retrieves its own hot memory and recent context
-const priming = await memory.getPromptContext({
-  agent_identity: "You are Nyx, a cognitive assistant...",
-  temporal_context: {
-    current_time: new Date().toISOString(),
-    timezone: "America/New_York"
-  },
-  conversation_history: "", // Fresh session
-  current_message: "Session start - what are my active projects and priorities?"
-});
-```
+## Mid-session retrieval
 
-This returns:
-- **Identity context**: Who the agent is
-- **Temporal state**: Current time, last interaction delta
-- **Hot memory**: Active projects, working questions, top-of-mind
-- **Selected LTM**: Recent/relevant long-term memories
-- **Token budgets**: Strictly bounded
+Call `/retrieve` when:
 
-### 3. Internalize (Hold Context)
+- the user asks about earlier work, preferences, decisions, or project history
+- the agent pivots to a different project or entity cluster
+- the host wants explicit history mode via `include_history=true`
+- the host wants entity-scoped recall using `entity_scope`
 
-The agent holds this internally—not as a file, not as injected text, but as **its current state**.
+Example payload:
 
-```javascript
-// Agent's internal state
-this.context = {
-  identity: priming.identity_context,
-  temporal: priming.temporal_state,
-  hot: priming.hot_memory,
-  retrieved: priming.selected_memories,
-  budget: priming.token_budgets
-};
-```
-
-### 4. Respond Grounded
-
-Now when the user speaks, the agent responds from continuity:
-
-```javascript
-async onUserMessage(message) {
-  // Re-retrieve if topic shifted significantly
-  if (this.topicShifted(message)) {
-    this.context.retrieved = await memory.retrieveContext({
-      user_message: message,
-      conversation_history: this.getRecentHistory()
-    });
-  }
-  
-  // Ingest this interaction
-  await memory.ingestMessage({
-    user_message: message,
-    assistant_message: response,
-    timestamp: new Date().toISOString()
-  });
-  
-  return response;
+```json
+{
+  "user_message": "What did we decide about the database migration?",
+  "conversation_history": "",
+  "include_history": false,
+  "entity_scope": ["database migration"]
 }
 ```
 
-## Why Self-Directed?
+## Ingestion and revision
 
-| Approach | Problem | Solution |
-|----------|---------|----------|
-| **External priming** (AGENTS.md writes context file) | Single point of failure, stale context, agent doesn't "own" memory | Agent queries when needed, holds fresh context |
-| **Scripted startup** (must run before agent) | Race conditions, silent failures, hard to debug | Agent verifies health, self-heals if needed |
-| **Passive storage** (agent receives dumped memories) | No agency, feels like retrieval not remembering | Agent queries selectively, maintains working memory |
+Use `/ingest` after important turns. The v3 pipeline may return revision-aware actions such as `ADD`, `UPDATE`, `SUPERSEDE`, `EXPIRE`, or `NOOP`.
 
-## Mid-Session Re-Query
+Use `/revise` when the host already has a fully formed candidate memory payload and wants direct revision processing.
 
-Memory isn't static. As conversation evolves, re-query:
+Important contract:
 
-```javascript
-// When user pivots topics
-if (newTopic !== currentTopic) {
-  const fresh = await memory.retrieveContext({
-    user_message: newTopic,
-    conversation_history: recentHistory
-  });
-  this.updateWorkingMemory(fresh);
-}
+- semantic changes are handled with `SUPERSEDE`
+- `UPDATE` is metadata-only
+- `MERGE` is intentionally conservative
 
-// When user asks "what did we decide about X?"
-const recall = await memory.retrieveContext({
-  user_message: "decisions about " + topic,
-  conversation_history: "" // Focus on long-term, not recent
-});
-```
+## Lane-aware integration
 
-## Background Cognition
+Core and working memory are now explicit.
 
-Agents should trigger periodic maintenance (hourly, or after significant sessions):
+- `GET /lanes/core` inspects always-visible context.
+- `GET /lanes/working` inspects active task context.
+- `POST /lanes/core/{memory_id}` pins a memory to core.
+- `DELETE /lanes/core/{memory_id}` removes a pin.
 
-```javascript
-// After important conversation
-await memory.runBackground({ scheduled: false });
+A good host does not rebuild its own pinning system on top of this. Let the memory backend own durable core context and bounded working context.
 
-// Or periodically via cron/heartbeat
-await memory.runBackground({ scheduled: true });
-```
+## Revision inspection
 
-This runs:
-- **Reflection**: Generate insights from recent memories
-- **Consolidation**: Merge redundant memories, reinforce important ones
-- **Decay**: Reduce weight of old/unused memories
-- **Conflict resolution**: Detect contradictory beliefs
+When debugging lifecycle behavior, use:
 
-## Error Handling
+- `GET /memory/{memory_id}/history`
+- `GET /memory/{memory_id}/active`
+- `GET /memory/{memory_id}/chain`
 
-The agent should handle memory system failures gracefully:
+These endpoints are useful when a newer preference, goal state, or task state has replaced older memory and you need to verify that the stale version stopped dominating retrieval.
 
-```javascript
-try {
-  await memory.start();
-} catch (err) {
-  // Log but don't crash
-  console.warn("Memory system offline, operating without persistence");
-  this.memoryAvailable = false;
-}
+## OpenClaw guidance
 
-// In operations...
-if (this.memoryAvailable) {
-  await memory.ingestMessage(interaction);
-}
-```
+The `skills/smart-memory-openclaw/` package remains the main OpenClaw wrapper, but it now talks to a v3 backend underneath.
 
-## Implementation Checklist
+Recommended pattern:
 
-- [ ] Agent calls `memory.start()` at session init
-- [ ] Agent queries `getPromptContext()` or `retrieveContext()` on wake
-- [ ] Agent holds context internally (not relying on external priming)
-- [ ] Agent ingests interactions after responses
-- [ ] Agent periodically triggers `runBackground()`
-- [ ] Agent handles memory system failures gracefully
-- [ ] Agent can re-query mid-session when topics shift
+- start the Smart Memory server with the Node adapter or your own process manager
+- use the skill for `memory_search`, `memory_commit`, and `memory_insights`
+- use the prompt injection helper before response generation so the model sees current active context
 
-## OpenClaw-Specific: Tool Registration
-
-When using Smart Memory v2.5 with OpenClaw, you must disable the built-in memory tools to prevent shadowing:
+Still disable OpenClaw's built-in file-search memory tools to avoid shadowing semantic retrieval:
 
 ```bash
-# The built-in memory_search and memory_get tools use FTS on MEMORY.md files
-# Disable them so the skill's semantic tools take precedence
 openclaw config set tools.deny '["memory_search", "memory_get"]'
 openclaw gateway restart
 ```
 
-**Why this matters:**
-- Built-in `memory_search`: File-based FTS search of MEMORY.md (no embeddings)
-- Skill `memory_search`: Semantic retrieval via Nomic embeddings + reranking
+## Python example
 
-Without this config change, calling `memory_search` will silently use FTS instead of your Smart Memory server.
+```python
+import requests
 
-## Example: Complete Integration
+BASE_URL = "http://127.0.0.1:8000"
 
-See `examples/agent-integration.js` for a full working example.
+health = requests.get(f"{BASE_URL}/health", timeout=5)
+health.raise_for_status()
 
-## The Goal
+prompt = requests.post(
+    f"{BASE_URL}/compose",
+    json={
+        "agent_identity": "You are a persistent assistant.",
+        "current_user_message": "Session start - what matters right now?",
+        "conversation_history": "",
+        "max_prompt_tokens": 512,
+    },
+    timeout=10,
+)
+prompt.raise_for_status()
+context = prompt.json()
 
-An agent that:
-- **Remembers who it is** (identity)
-- **Knows what time it is** (temporal)
-- **Holds current priorities** (hot memory)
-- **Recalls relevant history** (LTM)
-- **Does this itself** (self-directed)
+retrieval = requests.post(
+    f"{BASE_URL}/retrieve",
+    json={"user_message": "What are the current blockers?"},
+    timeout=10,
+)
+retrieval.raise_for_status()
 
-That's continuity. That's a mind, not a cache.
+requests.post(
+    f"{BASE_URL}/ingest",
+    json={
+        "user_message": "We finished the schema review.",
+        "assistant_message": "Noted.",
+        "source_session_id": "session-123",
+        "source_message_ids": ["msg-99"],
+    },
+    timeout=10,
+).raise_for_status()
+```
 
-## Resources
+## Node example
 
-- **[examples/session-start/](examples/session-start/)** — Framework-specific startup code
-  - `openclaw-prime.sh` — OpenClaw bash script
-  - `generic-python.py` — Python module for any framework
-  - `nodejs-agent.js` — Node.js module
-  - `README.md` — Usage examples
-  
-- **[docs/AGENT-FRAMEWORKS.md](docs/AGENT-FRAMEWORKS.md)** — Detailed integration for:
-  - OpenClaw
-  - LangChain
-  - OpenAI Assistants API
-  - Custom Python agents
-  - Node.js agents
-  - Docker/containerized deployments
-  
-- **[tools/session-prime.py](tools/session-prime.py)** — Universal CLI tool for session priming
+```js
+import memory from "smart-memory";
+
+await memory.start();
+
+const primed = await memory.getPromptContext({
+  agent_identity: "You are a persistent assistant.",
+  current_user_message: "Session start - summarize active context.",
+  conversation_history: "",
+  max_prompt_tokens: 512,
+});
+
+const retrieval = await memory.retrieveContext({
+  user_message: "What did we decide about deployment?",
+  conversation_history: "",
+});
+
+await memory.ingestMessage({
+  user_message: "Deployment is blocked on a config diff review.",
+  assistant_message: "Captured.",
+  source_session_id: "session-abc",
+  source_message_ids: ["turn-12"],
+});
+```
+
+## Operational checks
+
+Use these during integration and debugging:
+
+- `GET /health`
+- `GET /memories`
+- `GET /memory/{memory_id}`
+- `GET /insights/pending`
+- `GET /lanes/core`
+- `GET /lanes/working`
+- `GET /eval/case/{case_id}`
+
+## Failure handling
+
+If the memory service is unavailable, keep the agent running but be explicit that continuity is degraded. Do not silently fabricate prior context.
+
+Example:
+
+`I could not reach the local memory service, so I am continuing without reliable prior context.`
+
