@@ -1,4 +1,4 @@
-﻿"""Scenario-based evaluation runner for Smart Memory v3."""
+"""Transcript-first evaluation runner for Smart Memory v3.1."""
 
 from __future__ import annotations
 
@@ -24,31 +24,60 @@ class EvalRunner:
     def run_eval_suite(self, suite_name: str) -> list[EvalReport]:
         reports: list[EvalReport] = []
         for case in self._load_cases(suite_name):
-            reports.append(self.run_eval_case(case["id"]))
+            reports.extend(self.run_eval_case(case["id"]))
         return reports
 
     def run_eval_case(self, case_id: str) -> list[EvalReport]:
         path = self.scenarios_dir / f"{case_id}.json"
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
         reports: list[EvalReport] = []
-        for mode in ("baseline_v2", "v3_revision_only", "v3_full"):
-            reports.append(self._run_mode(mode, payload))
-        return reports
 
-    def _run_mode(self, mode: str, case: dict) -> EvalReport:
-        for interaction in case.get("messages", []):
-            self.system.ingest_message(interaction)
+        live_result = None
+        for interaction in payload.get("messages", []):
+            live_result = self.system.ingest_message(interaction)
 
-        retrieval = self.system.retrieve(case["query"], include_history=case.get("include_history", False))
+        retrieval = self.system.retrieve(payload["query"], include_history=case_id.endswith("history") or payload.get("include_history", False))
         prompt = self.system.compose_prompt(
             {
-                "agent_identity": case.get("agent_identity", "smart-memory-eval"),
-                "current_user_message": case["query"],
-                "conversation_history": case.get("conversation_history", ""),
-                "max_prompt_tokens": case.get("max_prompt_tokens", 512),
+                "agent_identity": payload.get("agent_identity", "smart-memory-eval"),
+                "current_user_message": payload["query"],
+                "conversation_history": payload.get("conversation_history", ""),
+                "max_prompt_tokens": payload.get("max_prompt_tokens", 512),
             }
         )
+        reports.append(self._build_report("live_ingest", payload, retrieval, prompt))
 
+        self.system.rebuild_all_memory_state()
+        replay_retrieval = self.system.retrieve(payload["query"], include_history=payload.get("include_history", False))
+        replay_prompt = self.system.compose_prompt(
+            {
+                "agent_identity": payload.get("agent_identity", "smart-memory-eval"),
+                "current_user_message": payload["query"],
+                "conversation_history": payload.get("conversation_history", ""),
+                "max_prompt_tokens": payload.get("max_prompt_tokens", 512),
+            }
+        )
+        reports.append(self._build_report("full_replay", payload, replay_retrieval, replay_prompt))
+
+        session_id = payload.get("session_id_for_partial_replay") or (live_result.session_id if live_result is not None else None)
+        partial_report = self.system.rebuild_from_transcripts(session_id=session_id)
+        partial_retrieval = self.system.retrieve(payload["query"], include_history=payload.get("include_history", False))
+        partial_prompt = self.system.compose_prompt(
+            {
+                "agent_identity": payload.get("agent_identity", "smart-memory-eval"),
+                "current_user_message": payload["query"],
+                "conversation_history": payload.get("conversation_history", ""),
+                "max_prompt_tokens": payload.get("max_prompt_tokens", 512),
+            }
+        )
+        partial_eval = self._build_report("partial_replay", payload, partial_retrieval, partial_prompt)
+        partial_eval.notes.append(f"rebuild_scope={partial_report.scope}")
+        reports.append(partial_eval)
+
+        reports.append(self._build_evidence_report(payload, replay_retrieval))
+        return reports
+
+    def _build_report(self, mode: str, case: dict, retrieval, prompt) -> EvalReport:
         expected = [value.lower() for value in case.get("expected_substrings", [])]
         selected_text = [candidate.memory.content.lower() for candidate in retrieval.selected]
         hits = [text for text in selected_text if any(expected_item in text for expected_item in expected)]
@@ -72,5 +101,33 @@ class EvalRunner:
                 stale_memory_leakage_count=stale_leakage,
                 token_budget_compliant=compliant,
             ),
-            notes=case.get("notes", []),
+            notes=list(case.get("notes", [])),
+        )
+
+    def _build_evidence_report(self, case: dict, retrieval) -> EvalReport:
+        focus_substring = (case.get("focus_substring") or next(iter(case.get("expected_substrings", [])), "")).lower()
+        focus_memory = None
+        for candidate in retrieval.selected:
+            if focus_substring and focus_substring in candidate.memory.content.lower():
+                focus_memory = candidate.memory
+                break
+        if focus_memory is None and retrieval.selected:
+            focus_memory = retrieval.selected[0].memory
+
+        evidence = [] if focus_memory is None else self.system.get_memory_evidence(str(focus_memory.id))
+        passed = focus_memory is not None and len(evidence) > 0
+        return EvalReport(
+            mode="evidence_backed",
+            suite_name=case.get("suite", "default"),
+            case_id=case["id"],
+            passed=passed,
+            metrics=EvalMetrics(
+                precision=1.0 if passed else 0.0,
+                recall=1.0 if passed else 0.0,
+                hit_ranking=[str(focus_memory.id)] if focus_memory is not None else [],
+                incorrect_active_memory_count=0,
+                stale_memory_leakage_count=0,
+                token_budget_compliant=True,
+            ),
+            notes=[f"evidence_rows={len(evidence)}"],
         )

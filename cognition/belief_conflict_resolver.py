@@ -119,18 +119,23 @@ class BeliefConflictResolver:
                 resolved.append(
                     BeliefMemory(
                         content=self._synthesize_content(left, right),
-                        importance=min(1.0, max(left.importance, right.importance)),
+                        importance_score=min(1.0, max(left.importance_score, right.importance_score)),
                         created_at=now,
-                        last_accessed=now,
+                        updated_at=now,
+                        last_accessed_at=now,
                         access_count=0,
-                        schema_version="2.0",
+                        schema_version="3.1",
                         entities=sorted(set(left.entities + right.entities)),
                         relations=[],
                         emotional_valence=(left.emotional_valence + right.emotional_valence) / 2,
                         emotional_intensity=max(left.emotional_intensity, right.emotional_intensity),
                         source=MemorySource.REFLECTION,
+                        source_session_id=None,
+                        source_message_ids=[],
                         confidence=merged_confidence,
                         reinforced_count=1,
+                        derivation_method="system",
+                        synthetic=True,
                     )
                 )
 

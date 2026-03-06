@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from embeddings import TextEmbedder, create_default_embedder
 from hot_memory import HotMemoryManager
 from prompt_engine.schemas import BeliefMemory, LongTermMemory
-from storage import JSONMemoryStore, VectorIndexStore
+from storage import SQLiteMemoryStore, VectorIndexStore
 
 from .associative_insight_generator import AssociativeInsightGenerator
 from .belief_conflict_resolver import BeliefConflictResolver, BeliefConflictResult
@@ -42,14 +42,16 @@ class BackgroundCognitionRunner:
     def __init__(
         self,
         *,
-        json_store: JSONMemoryStore | None = None,
+        memory_store: SQLiteMemoryStore | None = None,
+        json_store: SQLiteMemoryStore | None = None,
         vector_store: VectorIndexStore | None = None,
         hot_memory_manager: HotMemoryManager | None = None,
         embedder: TextEmbedder | None = None,
         config: BackgroundCognitionConfig = BackgroundCognitionConfig(),
     ) -> None:
-        self.json_store = json_store or JSONMemoryStore()
-        self.vector_store = vector_store or VectorIndexStore()
+        self.memory_store = memory_store or json_store or SQLiteMemoryStore()
+        self.json_store = self.memory_store
+        self.vector_store = vector_store or VectorIndexStore(sqlite_path=self.memory_store.sqlite_path)
         self.hot_memory = hot_memory_manager or HotMemoryManager()
         self.embedder = embedder or create_default_embedder()
         self.config = config
@@ -62,19 +64,21 @@ class BackgroundCognitionRunner:
 
     def _persist_memory(self, memory: LongTermMemory) -> None:
         memory_id = str(memory.id)
-        self.json_store.save_memory(memory)
+        self.memory_store.save_memory(memory)
         self.vector_store.upsert_vector(
             memory_id=memory_id,
             vector=self.embedder.embed(memory.content),
             model_name=self.embedder.model_name,
             payload={
                 "memory_id": memory_id,
-                "type": memory.type.value,
-                "importance": round(memory.importance, 6),
+                "memory_type": memory.type.value,
+                "importance_score": round(memory.importance_score, 6),
                 "created_at": memory.created_at.isoformat(),
                 "source": memory.source.value,
                 "entities": memory.entities,
                 "schema_version": memory.schema_version,
+                "status": memory.status.value,
+                "synthetic": memory.synthetic,
             },
         )
 
@@ -176,9 +180,9 @@ class BackgroundCognitionRunner:
                     reason = "belief_conflict_resolved"
                 elif memory_id in consolidation_archive_ids:
                     reason = "consolidated"
-                self.json_store.archive_memory(memory.id, reason=reason)
+                self.memory_store.archive_memory(memory.id, reason=reason)
             else:
-                self.json_store.update_memory(memory)
+                self.memory_store.update_memory(memory)
 
             if memory_id in vector_prune_ids:
                 self.vector_store.delete_vector(memory_id)
@@ -208,9 +212,7 @@ class BackgroundCognitionRunner:
         )
 
     def run_once(self) -> BackgroundCognitionResult:
-        """Execute all cognition agents in a full maintenance cycle."""
-
-        memories = self.json_store.list_memories(limit=self.config.recent_memory_limit)
+        memories = self.memory_store.list_memories(limit=self.config.recent_memory_limit)
         memories = sorted(memories, key=lambda item: item.created_at, reverse=True)
 
         return self._run_with_tasks(
@@ -226,16 +228,6 @@ class BackgroundCognitionRunner:
         self,
         schedule_state: CognitionScheduleState | None = None,
     ) -> BackgroundCognitionResult:
-        """Execute only due cognition tasks based on configured cadence.
-
-        Defaults:
-        - reflection: every 4h
-        - associative insight: every 4h
-        - consolidation: every 12h
-        - decay: every 24h
-        - belief resolver: every 24h
-        """
-
         schedule_state = schedule_state or CognitionScheduleState()
         now = datetime.now(timezone.utc)
 
@@ -265,7 +257,7 @@ class BackgroundCognitionRunner:
             now=now,
         )
 
-        memories = self.json_store.list_memories(limit=self.config.recent_memory_limit)
+        memories = self.memory_store.list_memories(limit=self.config.recent_memory_limit)
         memories = sorted(memories, key=lambda item: item.created_at, reverse=True)
 
         result = self._run_with_tasks(
@@ -277,7 +269,16 @@ class BackgroundCognitionRunner:
             execute_belief_resolver=execute_belief_resolver,
         )
 
-        for task_name in result.executed_tasks:
-            schedule_state.mark_run(task_name, now=now)
+        if execute_reflection:
+            schedule_state.mark_run("reflection", now=now)
+        if execute_associative:
+            schedule_state.mark_run("associative_insight", now=now)
+        if execute_consolidation:
+            schedule_state.mark_run("consolidation", now=now)
+        if execute_decay:
+            schedule_state.mark_run("decay", now=now)
+        if execute_belief_resolver:
+            schedule_state.mark_run("belief_resolver", now=now)
 
         return result
+

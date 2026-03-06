@@ -1,4 +1,4 @@
-﻿"""Canonical data schemas for Smart Memory v3 with v2 compatibility aliases."""
+﻿"""Canonical data schemas for Smart Memory v3.1."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _utc_now() -> datetime:
@@ -111,16 +111,16 @@ class RelationTriple(StrictModel):
 
 class BaseMemory(StrictModel):
     id: UUID = Field(default_factory=uuid4)
-    memory_type: MemoryType = Field(validation_alias=AliasChoices("memory_type", "type"))
+    memory_type: MemoryType
     content: str = Field(min_length=1)
-    importance_score: UnitInterval = Field(default=0.5, validation_alias=AliasChoices("importance_score", "importance"))
+    importance_score: UnitInterval = 0.5
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime | None = None
-    last_accessed_at: datetime | None = Field(default=None, validation_alias=AliasChoices("last_accessed_at", "last_accessed"))
+    last_accessed_at: datetime | None = None
     access_count: NonNegativeInt = 0
-    schema_version: str = "3.0"
+    schema_version: str = "3.1"
     source: MemorySource = MemorySource.CONVERSATION
-    source_session_id: str = "unknown"
+    source_session_id: str | None = None
     source_message_ids: list[str] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
@@ -142,17 +142,21 @@ class BaseMemory(StrictModel):
     attribute_family: str | None = None
     normalized_value: str | None = None
     state_label: str | None = None
+    derivation_method: str = "transcript_message"
+    evidence_summary: str = ""
+    evidence_count: NonNegativeInt = 0
+    rebuilt_at: datetime | None = None
+    synthetic: bool = False
 
-    def __init__(self, **data: Any) -> None:
-        if 'type' in data and 'memory_type' not in data:
-            data['memory_type'] = data.pop('type')
-        if 'importance' in data and 'importance_score' not in data:
-            data['importance_score'] = data.pop('importance')
-        if 'last_accessed' in data and 'last_accessed_at' not in data:
-            data['last_accessed_at'] = data.pop('last_accessed')
-        super().__init__(**data)
-
-    @field_validator("created_at", "updated_at", "last_accessed_at", "valid_from", "valid_to", mode="before")
+    @field_validator(
+        "created_at",
+        "updated_at",
+        "last_accessed_at",
+        "valid_from",
+        "valid_to",
+        "rebuilt_at",
+        mode="before",
+    )
     @classmethod
     def _normalize_datetime(cls, value: Any) -> datetime | None:
         if value is None:
@@ -187,19 +191,39 @@ class BaseMemory(StrictModel):
     @field_validator("schema_version")
     @classmethod
     def _validate_schema_version(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
+        cleaned = value.strip()
+        if not cleaned:
             raise ValueError("schema_version must not be empty")
-        return value
+        return cleaned
 
-    @field_validator("entities", "keywords", "retrieval_tags", mode="before")
+    @field_validator("source_session_id", mode="before")
+    @classmethod
+    def _normalize_session_id(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+    @field_validator("source_message_ids", "entities", "keywords", "retrieval_tags", mode="before")
     @classmethod
     def _default_list(cls, value: Any) -> list[str]:
         if value is None:
             return []
         if isinstance(value, str):
-            value = [value]
-        return list(value)
+            return [value]
+        return [str(item) for item in value]
+
+    @field_validator("source_message_ids")
+    @classmethod
+    def _normalize_message_ids(cls, values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            cleaned = str(value).strip()
+            if cleaned and cleaned not in seen:
+                deduped.append(cleaned)
+                seen.add(cleaned)
+        return deduped
 
     @field_validator("entities")
     @classmethod
@@ -240,39 +264,6 @@ class BaseMemory(StrictModel):
                 seen.add(lane)
         return lanes or [LaneName.RETRIEVED]
 
-    @model_validator(mode="before")
-    @classmethod
-    def _apply_legacy_aliases(cls, values: Any) -> Any:
-        if not isinstance(values, dict):
-            return values
-
-        payload = dict(values)
-        if "memory_type" not in payload and "type" in payload:
-            payload["memory_type"] = payload["type"]
-        if "importance_score" not in payload and "importance" in payload:
-            payload["importance_score"] = payload["importance"]
-        if "last_accessed_at" not in payload and "last_accessed" in payload:
-            payload["last_accessed_at"] = payload["last_accessed"]
-        if "updated_at" not in payload and "created_at" in payload:
-            payload["updated_at"] = payload["created_at"]
-        if "valid_from" not in payload and "created_at" in payload:
-            payload["valid_from"] = payload["created_at"]
-        payload.setdefault("source_session_id", "unknown")
-        payload.setdefault("source_message_ids", [])
-        payload.setdefault("keywords", [])
-        payload.setdefault("confidence", 0.5)
-        payload.setdefault("status", MemoryStatus.ACTIVE.value)
-        payload.setdefault("revision_of", None)
-        payload.setdefault("supersedes", [])
-        payload.setdefault("valid_to", None)
-        payload.setdefault("decay_policy", DecayPolicy.NONE.value)
-        payload.setdefault("lane_eligibility", [LaneName.RETRIEVED.value])
-        payload.setdefault("pinned_priority", 0.0)
-        payload.setdefault("retrieval_tags", [])
-        payload.setdefault("explanation", "")
-        payload.setdefault("schema_version", "3.0")
-        return payload
-
     @model_validator(mode="after")
     def _apply_defaults(self) -> "BaseMemory":
         if self.updated_at is None:
@@ -283,6 +274,8 @@ class BaseMemory(StrictModel):
             self.valid_from = self.created_at
         if self.valid_to is not None and self.valid_to < self.valid_from:
             raise ValueError("valid_to must be >= valid_from")
+        if self.evidence_count == 0 and self.source_message_ids:
+            self.evidence_count = len(self.source_message_ids)
         return self
 
     @property
@@ -299,11 +292,7 @@ class BaseMemory(StrictModel):
 
     def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("exclude_none", True)
-        payload = super().model_dump(*args, **kwargs)
-        payload.pop("type", None)
-        payload.pop("importance", None)
-        payload.pop("last_accessed", None)
-        return payload
+        return super().model_dump(*args, **kwargs)
 
 
 class EpisodicMemory(BaseMemory):
@@ -345,7 +334,7 @@ def _memory_model_from_value(payload: BaseMemory | dict[str, Any]) -> type[BaseM
     if isinstance(payload, BaseMemory):
         return payload.__class__
 
-    raw_type = payload.get("memory_type", payload.get("type", MemoryType.EPISODIC.value))
+    raw_type = payload.get("memory_type", MemoryType.EPISODIC.value)
     memory_type = raw_type if isinstance(raw_type, MemoryType) else MemoryType(str(raw_type).strip().lower())
     mapping: dict[MemoryType, type[BaseMemory]] = {
         MemoryType.EPISODIC: EpisodicMemory,
@@ -463,7 +452,7 @@ class TokenAllocation(StrictModel):
 class MemoryInclusionTrace(StrictModel):
     memory_id: UUID
     lane: LaneName
-    memory_type: MemoryType = Field(validation_alias=AliasChoices("memory_type", "type"))
+    memory_type: MemoryType
     status: MemoryStatus
     inclusion_reason: str = Field(min_length=1)
     token_estimate: NonNegativeInt = 0
@@ -527,4 +516,3 @@ class PromptComposerOutput(StrictModel):
     degraded_subsystems: list[str] = Field(default_factory=list)
     memory_traces: list[MemoryInclusionTrace] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-

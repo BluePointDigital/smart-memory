@@ -1,4 +1,4 @@
-﻿"""Storage backend interfaces for Smart Memory v3."""
+"""Storage backend interfaces for the Smart Memory v3.1 runtime."""
 
 from __future__ import annotations
 

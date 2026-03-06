@@ -1,6 +1,6 @@
-﻿# Memory Structure (Smart Memory v3)
+# Memory Structure (Smart Memory v3.1)
 
-Smart Memory v3 keeps long-term memory in SQLite and preserves JSON compatibility for migration, export, and fixtures.
+Smart Memory v3.1 is transcript-first and SQLite-only at runtime.
 
 ## Runtime layout
 
@@ -9,21 +9,25 @@ workspace/
 +- data/
    +- memory_store/
    |  +- v3_memory.sqlite
-   |  +- memories/                  # legacy JSON import/export compatibility
-   |  +- archive/                   # legacy JSON archive compatibility
    +- hot_memory/
-      +- hot_memory.json            # working-context and insight compatibility store
-+- MEMORY.md                        # optional human-maintained notes
-+- memory/                          # optional human note hierarchy
-   +- logs/
-   +- projects/
-   +- decisions/
-   +- lessons/
+      +- hot_memory.json   # derived compatibility projection only
++- MEMORY.md               # optional human-maintained notes
++- memory/                 # optional human note hierarchy
 ```
+
+`hot_memory.json` is not canonical truth. It is a local projection/cache regenerated from derived working-lane state.
 
 ## Canonical SQLite tables
 
-`storage/sqlite_memory_store.py` initializes these tables:
+`storage/sqlite_memory_store.py` and `transcripts/transcript_store.py` initialize the runtime schema.
+
+Transcript truth tables:
+
+- `sessions`
+- `transcript_messages`
+- `memory_evidence`
+
+Derived memory tables:
 
 - `memories`
 - `memory_entities`
@@ -31,86 +35,75 @@ workspace/
 - `entity_registry`
 - `entity_aliases`
 - `relationship_hints`
+- `vectors`
 - `audit_events`
 - `schema_migrations`
 
-The vector index uses the same local SQLite strategy through `VectorIndexStore`.
+## Truth hierarchy
+
+1. `transcript_messages`
+2. `memories`
+3. prompt/lane assembly
+
+Operationally:
+
+- transcript rows are append-only source records
+- memories are revision-aware interpretations of transcript evidence
+- lanes are downstream prompt context views
+- rebuild wipes derived state and replays transcripts
 
 ## Memory record fields
 
-Every v3 record includes the required product fields from the schema layer, including:
+Every durable v3.1 memory record includes:
 
 - identifiers and text: `id`, `content`, `memory_type`
 - scoring: `importance_score`, `confidence`
 - timestamps: `created_at`, `updated_at`, `last_accessed_at`
-- traceability: `access_count`, `source_session_id`, `source_message_ids`
-- retrieval hints: `entities`, `keywords`, `retrieval_tags`
 - lifecycle: `status`, `revision_of`, `supersedes`, `valid_from`, `valid_to`, `decay_policy`
-- lane metadata: `lane_eligibility`, `pinned_priority`
-- explanation: `explanation`
+- retrieval hints: `entities`, `keywords`, `retrieval_tags`, `lane_eligibility`, `pinned_priority`
+- transcript linkage: `source_session_id`, `source_message_ids`, `evidence_count`, `evidence_summary`
+- derivation metadata: `derivation_method`, `rebuilt_at`, `synthetic`
 - optional structured facets: `subject_entity_id`, `attribute_family`, `normalized_value`, `state_label`
 
-The optional facets are nullable and only used when they can be derived safely. They are not universal requirements for every memory type.
+Non-synthetic durable memories are expected to have transcript evidence.
 
-## Status model
+## Evidence model
 
-Default retrieval behavior is status-aware:
+`memory_evidence` links a memory record back to one or more transcript messages.
 
-- `active`: eligible
-- `superseded`: excluded unless history mode is requested
-- `expired`: excluded unless history mode is requested
-- `uncertain`: eligible with penalty
-- `archived`: off by default
-- `rejected`: never retrieved
+Stored fields:
+
+- `memory_id`
+- `message_id`
+- `span_start`
+- `span_end`
+- `evidence_kind`
+- `confidence`
+
+Current default behavior is message-level evidence with null spans.
 
 ## Lane model
 
-Lane membership is stored explicitly in `lane_memberships`.
+Lane membership is persisted in `lane_memberships`.
 
-- `core`: always-visible, durable, high-trust context
-- `working`: active task and project context with bounded decay
-- `retrieved`: runtime-selected lane, not persisted as a static prompt dump
+- `core`: transcript-backed, durable, high-trust context
+- `working`: transcript-backed active task/goal context with bounded decay
+- `retrieved`: runtime-selected context, not canonical persisted state
 
-The current prompt engine renders core memory as dedicated lines and projects working-lane state through the hot-memory compatibility block.
+Core and working lanes require transcript-backed memories for auto-promotion.
 
-## Hot memory compatibility store
+## Rebuild model
 
-`data/hot_memory/hot_memory.json` still exists because the current runtime uses it for:
+Rebuild preserves transcript truth and clears derived state:
 
-- active projects
-- working questions
-- top-of-mind items
-- insight queue
-- reinforcement metadata and retrieval counts
+- clear `memories`, `memory_evidence`, `memory_entities`, `lane_memberships`
+- clear entity registry and relationship hints
+- clear vectors
+- replay transcript messages deterministically
+- regenerate working-lane hot-memory projection
 
-In v3, this file is a compatibility projection for working context, not the canonical durable memory database.
+## Export and backup
 
-## Legacy JSON compatibility
+JSON export is still useful for backup or inspection, but it is no longer a runtime compatibility layer.
 
-`storage/json_memory_store.py` is still supported for:
-
-- migration input
-- fixture creation
-- debugging and export
-- legacy memory directories under `data/memory_store/memories/`
-
-New canonical writes should go to SQLite.
-
-## Migration
-
-Use `migration/v3_migration.py` to upgrade legacy JSON memories into SQLite.
-
-Migration behavior:
-
-- preserves IDs where possible
-- defaults status to `active`
-- backfills lane eligibility by memory type
-- inserts placeholder source session IDs when legacy data is missing
-- normalizes entity references where possible
-
-## Operational guidance
-
-- keep `data/` out of version control
-- use the API for inspection instead of hand-editing the SQLite database
-- prefer migration scripts or API writes over direct manual schema edits
-- if you export back to JSON for debugging, treat those files as derived artifacts
+Use exports as derived artifacts, not as an alternative source of truth.

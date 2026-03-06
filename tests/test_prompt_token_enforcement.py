@@ -40,8 +40,11 @@ def test_prompt_renderer_enforces_total_token_cap_with_priority_trimming():
     retrieved_memories = [
         EpisodicMemory(
             content=f"retrieved memory {i} " + ("important detail " * 30),
-            importance=0.8,
+            importance_score=0.8,
             source=MemorySource.CONVERSATION,
+            source_session_id="sess_tokens",
+            source_message_ids=[f"msg_{i}"],
+            evidence_count=1,
             entities=["proj_tokens"],
             participants=["user", "assistant"],
         )

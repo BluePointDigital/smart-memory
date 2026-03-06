@@ -1,4 +1,4 @@
-﻿"""Construct v3 memory objects from classified interactions."""
+"""Construct v3.1 memory objects from transcript-backed interactions."""
 
 from __future__ import annotations
 
@@ -199,10 +199,13 @@ def build_memory_object(
     active_projects: Iterable[str] | None = None,
     entities_override: list[str] | None = None,
     entity_resolver: EntityAliasResolver | None = None,
-    source_session_id: str = "unknown",
+    source_session_id: str | None = None,
     source_message_ids: list[str] | None = None,
+    derivation_method: str = "transcript_message",
+    synthetic: bool = False,
+    explanation: str = "ingested from transcript",
 ) -> LongTermMemory:
-    """Create a typed long-term memory object using v3 schemas."""
+    """Create a typed long-term memory object using v3.1 schemas."""
 
     timestamp = timestamp or datetime.now(timezone.utc)
     text_for_entities = f"{user_message} {assistant_message}".strip()
@@ -223,6 +226,7 @@ def build_memory_object(
     valence, intensity = emotional_metadata(text_for_entities)
     memory_source = parse_source(source)
     confidence = _default_confidence(memory_type, importance)
+    message_ids = list(source_message_ids or [])
 
     common = {
         "content": user_message.strip(),
@@ -231,7 +235,7 @@ def build_memory_object(
         "updated_at": timestamp,
         "last_accessed_at": timestamp,
         "access_count": 0,
-        "schema_version": "3.0",
+        "schema_version": "3.1",
         "entities": entities,
         "keywords": _extract_keywords(text_for_entities),
         "confidence": confidence,
@@ -244,13 +248,17 @@ def build_memory_object(
         "lane_eligibility": _default_lane_eligibility(memory_type),
         "pinned_priority": min(1.0, max(0.0, importance)),
         "retrieval_tags": _retrieval_tags(memory_type, text_for_entities),
-        "explanation": "ingested from conversation",
+        "explanation": explanation,
         "relations": relations,
         "emotional_valence": valence,
         "emotional_intensity": intensity,
         "source": memory_source,
-        "source_session_id": source_session_id or "unknown",
-        "source_message_ids": source_message_ids or [],
+        "source_session_id": source_session_id,
+        "source_message_ids": message_ids,
+        "derivation_method": derivation_method,
+        "evidence_summary": user_message.strip()[:240],
+        "evidence_count": len(message_ids),
+        "synthetic": synthetic,
     }
 
     if memory_type == MemoryType.SEMANTIC:

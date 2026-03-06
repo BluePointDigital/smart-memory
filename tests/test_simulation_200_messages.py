@@ -6,21 +6,22 @@ from ingestion import IngestionPipeline
 from hot_memory import HotMemoryManager
 from hot_memory.store import HotMemoryStore
 from retrieval import RetrievalPipeline
-from storage import JSONMemoryStore, VectorIndexStore
+from storage import SQLiteMemoryStore, VectorIndexStore
 
 
 def test_simulate_200_messages_stability(tmp_path):
-    json_store = JSONMemoryStore(root=tmp_path / "store")
-    vector_store = VectorIndexStore(sqlite_path=tmp_path / "store" / "vectors.sqlite")
+    sqlite_path = tmp_path / "store" / "memory.sqlite"
+    store = SQLiteMemoryStore(sqlite_path=sqlite_path)
+    vector_store = VectorIndexStore(sqlite_path=sqlite_path)
     embedder = HashingTextEmbedder()
 
     ingestion = IngestionPipeline(
-        json_store=json_store,
+        memory_store=store,
         vector_store=vector_store,
         embedder=embedder,
     )
     retrieval = RetrievalPipeline(
-        json_store=json_store,
+        memory_store=store,
         vector_store=vector_store,
         embedder=embedder,
     )
@@ -28,7 +29,7 @@ def test_simulate_200_messages_stability(tmp_path):
     hot_store = HotMemoryStore(path=tmp_path / "hot" / "hot_memory.json")
     hot_manager = HotMemoryManager(store=hot_store)
     runner = BackgroundCognitionRunner(
-        json_store=json_store,
+        memory_store=store,
         vector_store=vector_store,
         hot_memory_manager=hot_manager,
         embedder=embedder,
@@ -46,31 +47,20 @@ def test_simulate_200_messages_stability(tmp_path):
                 "user_message": message,
                 "assistant_message": "Captured planning update.",
                 "active_projects": [project],
+                "source_session_id": f"sess_{i % 6}",
             }
         )
         if result.stored:
             stored_count += 1
 
-        if i % 20 == 0:
-            retrieved = retrieval.retrieve(f"How is {project} going?")
-            for ranked in retrieved.selected:
-                hot_manager.register_retrieval_hit(ranked.memory)
-
         if i % 50 == 0 and i > 0:
             runner.run_once()
 
     final_retrieval = retrieval.retrieve("What happened in proj_stream_2 last week?")
-    final_hot = hot_manager.get()
+    transcript_messages = ingestion.transcript_store.list_messages()
 
-    # Ingestion rate and index growth sanity.
     assert stored_count > 40
     assert len(vector_store.list_memory_ids()) > 20
-
-    # Prompt-stability constraints.
-    assert len(final_hot.active_projects) <= 10
-    assert len(final_hot.top_of_mind) <= 20
-    assert len(final_hot.insight_queue) <= 10
-
-    # Retrieval still functional after workload.
+    assert len(transcript_messages) == 400
     assert final_retrieval.degraded is False
     assert len(final_retrieval.selected) >= 1

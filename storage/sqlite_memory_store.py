@@ -1,4 +1,4 @@
-﻿"""Canonical SQLite-backed memory store for Smart Memory v3."""
+"""Canonical SQLite-backed memory store for Smart Memory v3.1."""
 
 from __future__ import annotations
 
@@ -31,6 +31,13 @@ class SQLiteMemoryStore(MemoryBackend):
         connection.row_factory = sqlite3.Row
         return connection
 
+    def _table_columns(self, connection: sqlite3.Connection, table_name: str) -> set[str]:
+        return {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+    def _ensure_column(self, connection: sqlite3.Connection, table_name: str, name: str, ddl: str) -> None:
+        if name not in self._table_columns(connection, table_name):
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {ddl}")
+
     def _init_db(self) -> None:
         with self._connect() as connection:
             connection.executescript(
@@ -47,12 +54,17 @@ class SQLiteMemoryStore(MemoryBackend):
                     last_accessed_at TEXT NOT NULL,
                     valid_from TEXT,
                     valid_to TEXT,
-                    source_session_id TEXT NOT NULL,
+                    source_session_id TEXT,
                     subject_entity_id TEXT,
                     attribute_family TEXT,
                     normalized_value TEXT,
                     state_label TEXT,
-                    pinned_priority REAL NOT NULL DEFAULT 0.0
+                    pinned_priority REAL NOT NULL DEFAULT 0.0,
+                    derivation_method TEXT NOT NULL DEFAULT 'transcript_message',
+                    evidence_summary TEXT NOT NULL DEFAULT '',
+                    evidence_count INTEGER NOT NULL DEFAULT 0,
+                    rebuilt_at TEXT,
+                    synthetic INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS memory_entities (
@@ -111,14 +123,64 @@ class SQLiteMemoryStore(MemoryBackend):
                     applied_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS vectors (
+                    memory_id TEXT PRIMARY KEY,
+                    vector_json TEXT NOT NULL,
+                    dimension INTEGER NOT NULL,
+                    model_name TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT,
+                    label TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE TABLE IF NOT EXISTS transcript_messages (
+                    message_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    seq_num INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    tool_name TEXT,
+                    parent_message_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE TABLE IF NOT EXISTS memory_evidence (
+                    memory_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    span_start INTEGER,
+                    span_end INTEGER,
+                    evidence_kind TEXT NOT NULL,
+                    confidence REAL,
+                    PRIMARY KEY(memory_id, message_id, evidence_kind)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
                 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
                 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(source_session_id);
                 CREATE INDEX IF NOT EXISTS idx_memories_subject ON memories(subject_entity_id);
                 CREATE INDEX IF NOT EXISTS idx_lane_memberships_lane ON lane_memberships(lane_name);
                 CREATE INDEX IF NOT EXISTS idx_memory_entities_entity ON memory_entities(entity_id);
+                CREATE INDEX IF NOT EXISTS idx_vectors_model ON vectors(model_name);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_transcript_session_seq ON transcript_messages(session_id, seq_num);
+                CREATE INDEX IF NOT EXISTS idx_transcript_session_created ON transcript_messages(session_id, created_at, seq_num);
+                CREATE INDEX IF NOT EXISTS idx_memory_evidence_message ON memory_evidence(message_id);
                 """
             )
+            self._ensure_column(connection, "memories", "derivation_method", "derivation_method TEXT NOT NULL DEFAULT 'transcript_message'")
+            self._ensure_column(connection, "memories", "evidence_summary", "evidence_summary TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "memories", "evidence_count", "evidence_count INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "memories", "rebuilt_at", "rebuilt_at TEXT")
+            self._ensure_column(connection, "memories", "synthetic", "synthetic INTEGER NOT NULL DEFAULT 0")
 
     def _row_to_memory(self, row: sqlite3.Row | None) -> BaseMemory | None:
         if row is None:
@@ -127,7 +189,6 @@ class SQLiteMemoryStore(MemoryBackend):
 
     def save_memory(self, memory: BaseMemory) -> Path:
         payload = memory.model_dump(mode="json")
-        now = datetime.now(timezone.utc).isoformat()
         with self._connect() as connection:
             connection.execute(
                 """
@@ -135,8 +196,9 @@ class SQLiteMemoryStore(MemoryBackend):
                     id, payload_json, memory_type, status, importance_score, confidence,
                     created_at, updated_at, last_accessed_at, valid_from, valid_to,
                     source_session_id, subject_entity_id, attribute_family,
-                    normalized_value, state_label, pinned_priority
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    normalized_value, state_label, pinned_priority, derivation_method,
+                    evidence_summary, evidence_count, rebuilt_at, synthetic
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     payload_json=excluded.payload_json,
                     memory_type=excluded.memory_type,
@@ -153,7 +215,12 @@ class SQLiteMemoryStore(MemoryBackend):
                     attribute_family=excluded.attribute_family,
                     normalized_value=excluded.normalized_value,
                     state_label=excluded.state_label,
-                    pinned_priority=excluded.pinned_priority
+                    pinned_priority=excluded.pinned_priority,
+                    derivation_method=excluded.derivation_method,
+                    evidence_summary=excluded.evidence_summary,
+                    evidence_count=excluded.evidence_count,
+                    rebuilt_at=excluded.rebuilt_at,
+                    synthetic=excluded.synthetic
                 """,
                 (
                     str(memory.id),
@@ -173,6 +240,11 @@ class SQLiteMemoryStore(MemoryBackend):
                     memory.normalized_value,
                     memory.state_label,
                     memory.pinned_priority,
+                    memory.derivation_method,
+                    memory.evidence_summary,
+                    int(memory.evidence_count),
+                    memory.rebuilt_at.isoformat() if memory.rebuilt_at else None,
+                    1 if memory.synthetic else 0,
                 ),
             )
             connection.execute("DELETE FROM memory_entities WHERE memory_id = ?", (str(memory.id),))
@@ -193,6 +265,14 @@ class SQLiteMemoryStore(MemoryBackend):
 
     def update_memory(self, memory: BaseMemory) -> Path:
         return self.save_memory(memory)
+
+    def delete_memory(self, memory_id: UUID | str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM memory_evidence WHERE memory_id = ?", (str(memory_id),))
+            connection.execute("DELETE FROM memory_entities WHERE memory_id = ?", (str(memory_id),))
+            connection.execute("DELETE FROM lane_memberships WHERE memory_id = ?", (str(memory_id),))
+            connection.execute("DELETE FROM vectors WHERE memory_id = ?", (str(memory_id),))
+            connection.execute("DELETE FROM memories WHERE id = ?", (str(memory_id),))
 
     def list_memories(
         self,
@@ -241,7 +321,7 @@ class SQLiteMemoryStore(MemoryBackend):
         query.extend(joins)
         if where:
             query.append("WHERE " + " AND ".join(where))
-        query.append("ORDER BY m.updated_at DESC, m.created_at DESC")
+        query.append("ORDER BY m.updated_at DESC, m.created_at DESC, m.id ASC")
         if limit is not None:
             query.append(f"LIMIT {int(limit)}")
 
@@ -249,6 +329,16 @@ class SQLiteMemoryStore(MemoryBackend):
         with self._connect() as connection:
             rows = connection.execute(sql, params).fetchall()
         return [validate_long_term_memory(json.loads(row["payload_json"])) for row in rows]
+
+    def list_memory_ids(self) -> list[str]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT id FROM memories ORDER BY created_at ASC, id ASC").fetchall()
+        return [str(row["id"]) for row in rows]
+
+    def count_memories(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute("SELECT COUNT(*) AS count FROM memories").fetchone()
+        return int(row["count"] or 0)
 
     def archive_memory(self, memory_id: UUID | str, reason: str) -> Path | None:
         memory = self.get_memory(memory_id)
@@ -368,7 +458,7 @@ class SQLiteMemoryStore(MemoryBackend):
         if memory_type is not None:
             query += " AND m.memory_type = ?"
             params.append(memory_type.value)
-        query += " ORDER BY m.updated_at DESC LIMIT ?"
+        query += " ORDER BY m.updated_at DESC, m.created_at DESC LIMIT ?"
         params.append(limit)
 
         sql = query.format(entity_placeholders=entity_placeholders, status_placeholders=status_placeholders)
@@ -393,7 +483,7 @@ class SQLiteMemoryStore(MemoryBackend):
             related = str(memory.id) in ids or str(memory.revision_of) in ids or any(str(item) in ids for item in memory.supersedes)
             if related:
                 histories.append(memory)
-        histories.sort(key=lambda item: item.created_at)
+        histories.sort(key=lambda item: (item.created_at, str(item.id)))
         return histories
 
     def get_active_version(self, memory_id: UUID | str) -> BaseMemory | None:
@@ -411,13 +501,36 @@ class SQLiteMemoryStore(MemoryBackend):
     def get_revision_chain(self, memory_id: UUID | str) -> list[BaseMemory]:
         return self.get_memory_history(memory_id)
 
+    def clear_derived_state(self, *, preserve_audit: bool = True) -> int:
+        with self._connect() as connection:
+            row = connection.execute("SELECT COUNT(*) AS count FROM memories").fetchone()
+            cleared = int(row["count"] or 0)
+            connection.execute("DELETE FROM memory_evidence")
+            connection.execute("DELETE FROM memory_entities")
+            connection.execute("DELETE FROM lane_memberships")
+            connection.execute("DELETE FROM relationship_hints")
+            connection.execute("DELETE FROM entity_aliases")
+            connection.execute("DELETE FROM entity_registry")
+            connection.execute("DELETE FROM vectors")
+            connection.execute("DELETE FROM memories")
+            if not preserve_audit:
+                connection.execute("DELETE FROM audit_events")
+        return cleared
+
     def export_to_json(self, output_path: str | Path) -> Path:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            sessions = [dict(row) for row in connection.execute("SELECT * FROM sessions ORDER BY started_at ASC, session_id ASC").fetchall()]
+            transcript_messages = [dict(row) for row in connection.execute("SELECT * FROM transcript_messages ORDER BY created_at ASC, session_id ASC, seq_num ASC, message_id ASC").fetchall()]
+            evidence = [dict(row) for row in connection.execute("SELECT * FROM memory_evidence ORDER BY memory_id ASC, message_id ASC").fetchall()]
         bundle = {
             "memories": [memory.model_dump(mode="json") for memory in self.list_memories()],
             "core_lane": [memory.model_dump(mode="json") for memory in self.get_lane_contents(LaneName.CORE)],
             "working_lane": [memory.model_dump(mode="json") for memory in self.get_lane_contents(LaneName.WORKING)],
+            "sessions": sessions,
+            "transcript_messages": transcript_messages,
+            "memory_evidence": evidence,
         }
         output.write_text(json.dumps(bundle, indent=2), encoding="utf-8")
         return output

@@ -1,10 +1,10 @@
-﻿# Agent Framework Integration Guide
+# Agent Framework Integration Guide
 
-How to wire Smart Memory v3 into different agent frameworks for deterministic session priming and continuity.
+How to wire Smart Memory v3.1 into different agent frameworks for deterministic session priming, transcript-first persistence, and rebuildable continuity.
 
 ## Golden rule
 
-Query memory before the agent speaks.
+Query memory before the agent speaks, and treat transcript append as the durable write.
 
 The recommended startup pattern is the same across frameworks:
 
@@ -12,7 +12,7 @@ The recommended startup pattern is the same across frameworks:
 2. `POST /compose`
 3. hold the returned prompt and traces in agent state
 4. answer the user
-5. `POST /ingest` after meaningful turns
+5. `POST /ingest` or `POST /transcripts/message` after meaningful turns
 
 ## OpenClaw
 
@@ -28,6 +28,7 @@ Practical setup:
 2. call `/compose` during session initialization
 3. keep the returned prompt in state before the first greeting
 4. use the skill tools for search, commit, and pending insights
+5. use transcript and evidence endpoints when debugging continuity
 
 ## Custom Python agents
 
@@ -101,15 +102,19 @@ Prefer natural-language queries over keyword fragments.
 
 ## Explicit inspection
 
-For deeper lifecycle debugging, use:
+For transcript and lifecycle debugging, use:
 
 - `GET /memories`
 - `GET /memory/{memory_id}`
+- `GET /memory/{memory_id}/evidence`
 - `GET /memory/{memory_id}/history`
 - `GET /memory/{memory_id}/active`
 - `GET /memory/{memory_id}/chain`
+- `GET /transcripts/{session_id}`
+- `GET /transcript/message/{message_id}`
 - `GET /lanes/core`
 - `GET /lanes/working`
+- `POST /rebuild`
 
 ## Failure handling
 
@@ -118,4 +123,3 @@ If Smart Memory is unavailable:
 - keep the agent running
 - say continuity is degraded
 - do not pretend to remember prior context you could not retrieve
-

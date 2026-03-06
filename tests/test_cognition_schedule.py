@@ -5,16 +5,17 @@ from embeddings import HashingTextEmbedder
 from ingestion import IngestionPipeline
 from hot_memory import HotMemoryManager
 from hot_memory.store import HotMemoryStore
-from storage import JSONMemoryStore, VectorIndexStore
+from storage import SQLiteMemoryStore, VectorIndexStore
 
 
 def test_background_scheduler_respects_cadence(tmp_path):
-    json_store = JSONMemoryStore(root=tmp_path / "store")
-    vector_store = VectorIndexStore(sqlite_path=tmp_path / "store" / "vectors.sqlite")
+    sqlite_path = tmp_path / "store" / "memory.sqlite"
+    store = SQLiteMemoryStore(sqlite_path=sqlite_path)
+    vector_store = VectorIndexStore(sqlite_path=sqlite_path)
     embedder = HashingTextEmbedder()
 
     ingestion = IngestionPipeline(
-        json_store=json_store,
+        memory_store=store,
         vector_store=vector_store,
         embedder=embedder,
     )
@@ -31,7 +32,7 @@ def test_background_scheduler_respects_cadence(tmp_path):
     hot_manager = HotMemoryManager(store=hot_store)
 
     runner = BackgroundCognitionRunner(
-        json_store=json_store,
+        memory_store=store,
         vector_store=vector_store,
         hot_memory_manager=hot_manager,
         embedder=embedder,

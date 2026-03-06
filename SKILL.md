@@ -1,27 +1,29 @@
-﻿---
+---
 name: smart-memory
-description: Persistent local revision-aware memory for OpenClaw via a Node adapter and FastAPI engine.
+description: Persistent local transcript-first memory for OpenClaw via a Node adapter and FastAPI engine.
 ---
 
-# Smart Memory v3 Skill
+# Smart Memory v3.1 Skill
 
-Smart Memory v3 is a local cognitive memory runtime with revision-aware ingestion, pinned context lanes, entity-aware retrieval, and bounded prompt composition.
+Smart Memory v3.1 is a local transcript-first cognitive memory runtime with revision-aware derivation, pinned context lanes, entity-aware retrieval, and bounded prompt composition.
 
 Core runtime:
 - Node adapter: `smart-memory/index.js`
 - Local API: `server.py`
 - System facade: `cognitive_memory_system.py`
-- Canonical store: `storage/sqlite_memory_store.py`
+- Canonical store: `storage/sqlite_memory_store.py` plus `transcripts/`
 
 ## Core Capabilities
 
+- transcript-first ingest and per-message transcript logging
 - typed long-term memory including `preference`, `identity`, and `task_state`
-- revision-aware lifecycle decisions and supersession chains
+- evidence-backed revision lifecycle decisions and supersession chains
 - explicit core and working memory lanes
 - entity-aware retrieval with lightweight relationship hints
+- deterministic rebuild from transcript history
 - hot-memory compatibility projection for working context
 - strict token-bounded prompt composition with trace metadata
-- inspection endpoints for history, active version, lanes, and eval runs
+- inspection endpoints for transcripts, evidence, history, lanes, and eval runs
 
 ## OpenClaw Integration
 
@@ -31,7 +33,7 @@ Primary exports:
 - `createSmartMemorySkill(options)`
 - `createOpenClawHooks({ skill, agentIdentity, summarizeWithLLM })`
 
-The wrapper remains stable while the backend is now v3 under the hood.
+The wrapper remains stable while the backend is now transcript-first under the hood.
 
 ### Tool Interface
 
@@ -53,7 +55,7 @@ The wrapper remains stable while the backend is now v3 under the hood.
 
 ## API Endpoints
 
-Stable endpoints:
+Core endpoints:
 - `GET /health`
 - `POST /ingest`
 - `POST /retrieve`
@@ -63,7 +65,11 @@ Stable endpoints:
 - `GET /memory/{memory_id}`
 - `GET /insights/pending`
 
-New v3 endpoints:
+Transcript and inspection endpoints:
+- `POST /transcripts/message`
+- `GET /transcripts/{session_id}`
+- `GET /transcript/message/{message_id}`
+- `GET /memory/{memory_id}/evidence`
 - `POST /revise`
 - `GET /memory/{memory_id}/history`
 - `GET /memory/{memory_id}/active`
@@ -71,6 +77,8 @@ New v3 endpoints:
 - `GET /lanes/{lane_name}`
 - `POST /lanes/{lane_name}/{memory_id}`
 - `DELETE /lanes/{lane_name}/{memory_id}`
+- `POST /rebuild`
+- `POST /rebuild/{session_id}`
 - `GET /eval/suite/{suite_name}`
 - `GET /eval/case/{case_id}`
 
@@ -78,11 +86,11 @@ New v3 endpoints:
 
 - query memory before speaking when continuity matters
 - do not claim prior context unless retrieval actually supports it
-- treat SQLite as canonical storage in v3
-- use JSON only for migration, export, and fixtures
+- transcripts are canonical, memories are derived
+- treat SQLite as canonical runtime storage
+- treat JSON as offline export or backup only
 - keep CPU-only PyTorch policy intact
 
 ## Deprecated
 
-Legacy vector-memory CLI artifacts remain deprecated and should not be revived in v3 work.
-
+Legacy vector-memory CLI artifacts remain deprecated and should not be revived.

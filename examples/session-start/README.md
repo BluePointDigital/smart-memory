@@ -1,6 +1,6 @@
-﻿# Session Start Examples
+# Session Start Examples
 
-These examples show how to prime Smart Memory v3 before the first response of a new session.
+These examples show how to prime Smart Memory v3.1 before the first response of a new session.
 
 ## Why this matters
 
@@ -14,11 +14,11 @@ session starts
 -> answer the user
 ```
 
-## What `/compose` gives you in v3
+## What `/compose` gives you in v3.1
 
 A compose response can include:
 
-- core memory that should always stay visible
+- transcript-backed core memory that should always stay visible
 - working context projected from the working lane
 - retrieved memories selected for the current message
 - temporal state and interaction state

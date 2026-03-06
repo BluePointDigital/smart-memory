@@ -11,15 +11,18 @@ def test_curiosity_trigger_generates_working_question_insight():
 
     memory = EpisodicMemory(
         content="User was very frustrated by repeated deployment failures in proj_alpha.",
-        importance=0.9,
+        importance_score=0.9,
         entities=["proj_alpha"],
         relations=[],
         emotional_valence=-0.8,
         emotional_intensity=0.95,
         source=MemorySource.CONVERSATION,
+        source_session_id="sess_alpha",
+        source_message_ids=["msg_alpha"],
+        evidence_count=1,
         participants=["user", "assistant"],
         created_at=datetime.now(timezone.utc),
-        last_accessed=datetime.now(timezone.utc),
+        last_accessed_at=datetime.now(timezone.utc),
         access_count=0,
     )
 

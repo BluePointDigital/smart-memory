@@ -1,4 +1,4 @@
-﻿"""FastAPI server for the cognitive memory system."""
+"""FastAPI server for the transcript-first cognitive memory system."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field
 
 from cognitive_memory_system import CognitiveMemorySystem
-from ingestion.ingestion_pipeline import IncomingInteraction
+from ingestion.ingestion_pipeline import IncomingInteraction, TranscriptMessageRequest
 from prompt_engine.schemas import LaneName, MemoryType, PromptComposerRequest
 
 
@@ -42,7 +42,7 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
         app.state.cognitive_system = system_factory()
         yield
 
-    app = FastAPI(title="Cognitive Memory API", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="Cognitive Memory API", version="0.3.1", lifespan=lifespan)
 
     def get_system(request: Request):
         system = getattr(request.app.state, "cognitive_system", None)
@@ -68,7 +68,7 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
             component = getattr(system, component_name, None)
             if component is None:
                 continue
-            candidate = getattr(component, "json_store", None)
+            candidate = getattr(component, "memory_store", None) or getattr(component, "json_store", None)
             if candidate is not None:
                 return candidate
         return None
@@ -119,6 +119,11 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
             raise HTTPException(status_code=404, detail="Memory not found")
         return jsonable_encoder(memory)
 
+    @app.get("/memory/{memory_id}/evidence")
+    async def get_memory_evidence(memory_id: str, request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.get_memory_evidence(memory_id))
+
     @app.get("/memory/{memory_id}/history")
     async def get_memory_history(memory_id: str, request: Request):
         system = get_system(request)
@@ -137,6 +142,19 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
         system = get_system(request)
         return jsonable_encoder(system.get_revision_chain(memory_id))
 
+    @app.get("/transcripts/{session_id}")
+    async def get_transcript(session_id: str, request: Request, start: int | None = None, end: int | None = None):
+        system = get_system(request)
+        return jsonable_encoder(system.get_transcript(session_id, start=start, end=end))
+
+    @app.get("/transcript/message/{message_id}")
+    async def get_transcript_message(message_id: str, request: Request):
+        system = get_system(request)
+        message = system.get_message(message_id)
+        if message is None:
+            raise HTTPException(status_code=404, detail="Transcript message not found")
+        return jsonable_encoder(message)
+
     @app.get("/insights/pending")
     async def insights_pending(request: Request):
         system = get_system(request)
@@ -149,10 +167,10 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
     async def get_lane_contents(lane_name: str, request: Request):
         system = get_system(request)
         try:
-            lane = LaneName(lane_name)
+            LaneName(lane_name)
         except ValueError as error:
             raise HTTPException(status_code=400, detail="Invalid lane") from error
-        return jsonable_encoder(system.get_lane_contents(lane.value))
+        return jsonable_encoder(system.get_lane_contents(lane_name))
 
     @app.post("/lanes/{lane_name}/{memory_id}")
     async def promote_to_lane(lane_name: str, memory_id: str, request: Request):
@@ -170,6 +188,12 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
     async def ingest(interaction: IncomingInteraction, request: Request):
         system = get_system(request)
         result = system.ingest_interaction(interaction.model_dump(mode="json"))
+        return jsonable_encoder(result)
+
+    @app.post("/transcripts/message")
+    async def append_transcript(payload: TranscriptMessageRequest, request: Request):
+        system = get_system(request)
+        result = system.append_transcript_message(payload.model_dump(mode="json"))
         return jsonable_encoder(result)
 
     @app.post("/revise")
@@ -206,6 +230,16 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
         result = system.run_background_cycle(scheduled=payload.scheduled)
         return jsonable_encoder(result)
 
+    @app.post("/rebuild")
+    async def rebuild(request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.rebuild_all_memory_state())
+
+    @app.post("/rebuild/{session_id}")
+    async def rebuild_session(session_id: str, request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.rebuild_from_transcripts(session_id=session_id))
+
     @app.get("/eval/suite/{suite_name}")
     async def run_eval_suite(suite_name: str, request: Request):
         system = get_system(request)
@@ -220,3 +254,4 @@ def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMe
 
 
 app = create_app()
+

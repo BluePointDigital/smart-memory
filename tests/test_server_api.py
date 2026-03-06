@@ -26,13 +26,13 @@ class StubMemoryStore:
 class StubRetrievalComponent:
     def __init__(self):
         self.embedder = StubEmbedder()
-        self.json_store = StubMemoryStore()
+        self.memory_store = StubMemoryStore()
 
 
 class StubIngestionComponent:
     def __init__(self):
         self.embedder = StubEmbedder()
-        self.json_store = StubMemoryStore()
+        self.memory_store = StubMemoryStore()
 
 
 class StubHotMemoryManager:
@@ -58,12 +58,24 @@ class StubCognitiveSystem:
         self.hot_memory = StubHotMemoryManager()
 
     def ingest_interaction(self, payload):
-        return {"ok": True, "kind": "ingest", "payload": payload}
+        return {"ok": True, "kind": "ingest", "payload": payload, "session_id": "sess_stub", "transcript_message_ids": ["msg_user", "msg_assistant"]}
+
+    def append_transcript_message(self, payload):
+        return {"ok": True, "kind": "transcript", "payload": payload, "session_id": payload.get("session_id") or "sess_stub", "transcript_message_ids": ["msg_single"]}
+
+    def retrieve(self, query, *, include_history=False, entity_scope=None):
+        return {
+            "ok": True,
+            "kind": "retrieve",
+            "user_message": query,
+            "include_history": include_history,
+            "entity_scope": entity_scope or [],
+        }
 
     def retrieve_context(self, user_message: str, conversation_history: str = ""):
         return {
             "ok": True,
-            "kind": "retrieve",
+            "kind": "retrieve_context",
             "user_message": user_message,
             "conversation_history": conversation_history,
         }
@@ -96,6 +108,47 @@ class StubCognitiveSystem:
     def run_background_cycle(self, *, scheduled: bool = True):
         return {"ok": True, "kind": "background", "scheduled": scheduled}
 
+    def get_transcript(self, session_id: str, start=None, end=None):
+        return [{"session_id": session_id, "seq_num": 1, "message_id": "msg_single", "content": "hello", "role": "user", "source_type": "conversation", "created_at": "2026-03-04T00:00:00+00:00", "metadata": {}}]
+
+    def get_message(self, message_id: str):
+        if message_id == "missing":
+            return None
+        return {"message_id": message_id, "session_id": "sess_stub", "seq_num": 1, "content": "hello", "role": "user", "source_type": "conversation", "created_at": "2026-03-04T00:00:00+00:00", "metadata": {}}
+
+    def get_memory_evidence(self, memory_id: str):
+        return [{"memory_id": memory_id, "message_id": "msg_single", "evidence_kind": "direct"}]
+
+    def get_memory_history(self, memory_id: str):
+        return []
+
+    def get_active_version(self, memory_id: str):
+        return None
+
+    def get_revision_chain(self, memory_id: str):
+        return []
+
+    def get_lane_contents(self, lane_name: str):
+        return []
+
+    def promote_memory(self, memory_id: str, lane_name: str):
+        return None
+
+    def demote_memory(self, memory_id: str, lane_name: str):
+        return None
+
+    def rebuild_all_memory_state(self):
+        return {"scope": "full", "rebuilt_messages": 1, "rebuilt_memories": 1}
+
+    def rebuild_from_transcripts(self, session_id: str | None = None):
+        return {"scope": "session" if session_id else "full", "session_id": session_id, "rebuilt_messages": 1, "rebuilt_memories": 1}
+
+    def run_eval_suite(self, suite_name: str):
+        return []
+
+    def run_eval_case(self, case_id: str):
+        return []
+
 
 def test_server_endpoints_with_stub_system():
     app = create_app(system_factory=StubCognitiveSystem)
@@ -118,6 +171,14 @@ def test_server_endpoints_with_stub_system():
         )
         assert ingest_resp.status_code == 200
         assert ingest_resp.json()["kind"] == "ingest"
+        assert ingest_resp.json()["session_id"] == "sess_stub"
+
+        transcript_resp = client.post(
+            "/transcripts/message",
+            json={"role": "user", "source_type": "conversation", "content": "hello"},
+        )
+        assert transcript_resp.status_code == 200
+        assert transcript_resp.json()["kind"] == "transcript"
 
         retrieve_resp = client.post(
             "/retrieve",
@@ -140,6 +201,26 @@ def test_server_endpoints_with_stub_system():
         )
         assert compose_resp.status_code == 200
         assert "prompt" in compose_resp.json()
+
+        transcript_get = client.get("/transcripts/sess_stub")
+        assert transcript_get.status_code == 200
+        assert transcript_get.json()[0]["session_id"] == "sess_stub"
+
+        message_get = client.get("/transcript/message/msg_single")
+        assert message_get.status_code == 200
+        assert message_get.json()["message_id"] == "msg_single"
+
+        evidence_get = client.get("/memory/mem_1/evidence")
+        assert evidence_get.status_code == 200
+        assert evidence_get.json()[0]["memory_id"] == "mem_1"
+
+        rebuild_resp = client.post("/rebuild")
+        assert rebuild_resp.status_code == 200
+        assert rebuild_resp.json()["scope"] == "full"
+
+        rebuild_session_resp = client.post("/rebuild/sess_stub")
+        assert rebuild_session_resp.status_code == 200
+        assert rebuild_session_resp.json()["session_id"] == "sess_stub"
 
         memories_resp = client.get("/memories")
         assert memories_resp.status_code == 200

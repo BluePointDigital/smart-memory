@@ -1,15 +1,15 @@
-﻿---
+---
 name: smart-memory
-description: "Persistent local revision-aware memory via FastAPI (127.0.0.1:8000). Use for semantic recall, durable memory commits, and pending insight retrieval through the Smart Memory v3 backend."
+description: "Persistent local transcript-first memory via FastAPI (127.0.0.1:8000). Use for semantic recall, durable memory commits, transcript inspection, and pending insight retrieval through the Smart Memory v3.1 backend."
 metadata:
-  {"openclaw":{"emoji":"🧠","requires":{"bins":["curl"]}}}
+  {"openclaw":{"emoji":"??","requires":{"bins":["curl"]}}}
 ---
 
 # Smart Memory OpenClaw Skill
 
 This skill wraps the Smart Memory backend running at `http://127.0.0.1:8000`.
 
-The wrapper package lives in `skills/smart-memory-openclaw/`, and the backend it targets is Smart Memory v3 with revision-aware ingestion, SQLite-backed durable memory, status-aware retrieval, and explicit core and working memory lanes.
+The wrapper package lives in `skills/smart-memory-openclaw/`, and the backend it targets is Smart Memory v3.1 with transcript-first ingestion, SQLite-backed durable memory, evidence-backed revision chains, status-aware retrieval, and explicit core and working memory lanes.
 
 ## When to Use
 
@@ -17,6 +17,7 @@ Use this skill when you need to:
 
 - recall prior decisions, preferences, goals, or project state
 - persist important new facts, pivots, completions, or blockers
+- inspect transcript-backed evidence behind a memory
 - inspect pending insights from background cognition
 - ground an OpenClaw session in local memory continuity
 
@@ -57,7 +58,7 @@ Notes:
 
 - retrieval excludes superseded and expired memories by default
 - use natural-language queries instead of keyword fragments
-- use history inspection endpoints when you need stale or superseded context explicitly
+- use transcript and evidence endpoints when you need deeper inspection
 
 ### Commit memory
 
@@ -67,8 +68,7 @@ curl -s -X POST http://127.0.0.1:8000/ingest \
   -d '{
     "user_message":"Deployment is blocked on config diff review.",
     "assistant_message":"Captured as active task state.",
-    "source_session_id":"session-123",
-    "source_message_ids":["turn-7"]
+    "source_session_id":"session-123"
   }'
 ```
 
@@ -89,11 +89,14 @@ curl -s http://127.0.0.1:8000/insights/pending
 ```bash
 curl -s http://127.0.0.1:8000/memories
 curl -s http://127.0.0.1:8000/memory/<memory_id>
+curl -s http://127.0.0.1:8000/memory/<memory_id>/evidence
 curl -s http://127.0.0.1:8000/memory/<memory_id>/history
 curl -s http://127.0.0.1:8000/memory/<memory_id>/active
 curl -s http://127.0.0.1:8000/memory/<memory_id>/chain
+curl -s http://127.0.0.1:8000/transcripts/<session_id>
 curl -s http://127.0.0.1:8000/lanes/core
 curl -s http://127.0.0.1:8000/lanes/working
+curl -s -X POST http://127.0.0.1:8000/rebuild
 ```
 
 ## Prompt guidance
@@ -105,5 +108,4 @@ If pending insights appear in context and they genuinely relate to the current c
 - the wrapper health-checks the backend before tool calls
 - failed commits queue locally and flush on later healthy calls
 - session-arc capture and prompt injection still live in this package
-- the package name is still versioned, but the backend is no longer v2.5-era
-
+- transcript rows are canonical truth and memories are derived
