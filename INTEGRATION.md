@@ -233,6 +233,23 @@ if (this.memoryAvailable) {
 - [ ] Agent handles memory system failures gracefully
 - [ ] Agent can re-query mid-session when topics shift
 
+## OpenClaw-Specific: Tool Registration
+
+When using Smart Memory v2.5 with OpenClaw, you must disable the built-in memory tools to prevent shadowing:
+
+```bash
+# The built-in memory_search and memory_get tools use FTS on MEMORY.md files
+# Disable them so the skill's semantic tools take precedence
+openclaw config set tools.deny '["memory_search", "memory_get"]'
+openclaw gateway restart
+```
+
+**Why this matters:**
+- Built-in `memory_search`: File-based FTS search of MEMORY.md (no embeddings)
+- Skill `memory_search`: Semantic retrieval via Nomic embeddings + reranking
+
+Without this config change, calling `memory_search` will silently use FTS instead of your Smart Memory server.
+
 ## Example: Complete Integration
 
 See `examples/agent-integration.js` for a full working example.
