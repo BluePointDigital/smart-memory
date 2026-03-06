@@ -93,6 +93,12 @@ flowchart TD
 - Session arc capture at checkpoints and session end.
 - Passive `[ACTIVE CONTEXT]` prompt injection for grounded responses.
 
+**Important:** Disable OpenClaw's built-in memory tools to prevent shadowing:
+```bash
+openclaw config set tools.deny '["memory_search", "memory_get"]'
+openclaw gateway restart
+```
+
 ---
 
 ## Memory Layers
