@@ -1,4 +1,4 @@
-﻿# Smart Memory v3 Experimental
+﻿# Smart Memory v3
 
 Smart Memory is a local-first agent memory backend for OpenClaw and adjacent runtimes. The `experimental` branch upgrades the project from retrieval-heavy v2 behavior to a revision-aware v3 architecture with canonical SQLite storage, deterministic memory lifecycle handling, and first-class core and working memory lanes.
 
