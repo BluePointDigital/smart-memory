@@ -33,6 +33,18 @@ cd ~/.openclaw/workspace/smart-memory
 uvicorn server:app --host 127.0.0.1 --port 8000 &
 ```
 
+## OpenClaw Configuration
+
+**Important:** OpenClaw has built-in `memory_search` and `memory_get` tools that search MEMORY.md files using FTS. To use this skill's semantic memory tools, you must disable the built-in ones:
+
+```bash
+# Disable built-in memory tools so skill tools take precedence
+openclaw config set tools.deny '["memory_search", "memory_get"]'
+openclaw gateway restart
+```
+
+After restart, the skill's `memory_search` will use Nomic embeddings for semantic retrieval instead of FTS file search.
+
 ## Search Memories
 
 Find relevant memories via semantic + reranking search.
