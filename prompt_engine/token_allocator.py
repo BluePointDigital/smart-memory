@@ -1,4 +1,4 @@
-"""Token budget allocation for prompt composition."""
+﻿"""Token budget allocation for prompt composition."""
 
 from __future__ import annotations
 
@@ -33,8 +33,6 @@ def _allocate_exact_tokens(total_tokens: int, percentages: dict[str, float]) -> 
 
 
 def _apply_minimums(tokens: dict[str, int], minimums: dict[str, int]) -> dict[str, int]:
-    """Enforce per-section minimums while preserving total allocation."""
-
     adjusted = dict(tokens)
     for section, minimum in minimums.items():
         minimum = max(0, int(minimum))
@@ -46,11 +44,7 @@ def _apply_minimums(tokens: dict[str, int], minimums: dict[str, int]) -> dict[st
         adjusted[section] = minimum
 
         donors = sorted(
-            (
-                name
-                for name in adjusted
-                if name != section and adjusted[name] > minimums.get(name, 0)
-            ),
+            (name for name in adjusted if name != section and adjusted[name] > minimums.get(name, 0)),
             key=lambda name: adjusted[name],
             reverse=True,
         )
@@ -79,6 +73,7 @@ def allocate_tokens(
     *,
     include_retrieved_memory: bool,
     include_insights: bool,
+    include_core_memory: bool = False,
 ) -> TokenAllocation:
     """Allocate section budgets using interaction-state-aware percentages."""
 
@@ -86,29 +81,36 @@ def allocate_tokens(
         percentages = {
             "system_identity": 10,
             "temporal_state": 5,
-            "working_memory": 10,
-            "retrieved_memory": 15,
+            "core_memory": 10,
+            "working_memory": 12,
+            "retrieved_memory": 13,
             "insight_queue": 0,
-            "conversation_history": 60,
+            "conversation_history": 50,
         }
     elif interaction_state == InteractionState.RETURNING:
         percentages = {
             "system_identity": 10,
             "temporal_state": 5,
-            "working_memory": 10,
-            "retrieved_memory": 30,
+            "core_memory": 12,
+            "working_memory": 12,
+            "retrieved_memory": 26,
             "insight_queue": 5,
-            "conversation_history": 40,
+            "conversation_history": 30,
         }
     else:
         percentages = {
             "system_identity": 10,
             "temporal_state": 5,
-            "working_memory": 5,
-            "retrieved_memory": 10,
+            "core_memory": 10,
+            "working_memory": 8,
+            "retrieved_memory": 12,
             "insight_queue": 0,
-            "conversation_history": 70,
+            "conversation_history": 55,
         }
+
+    if not include_core_memory:
+        percentages["conversation_history"] += percentages["core_memory"]
+        percentages["core_memory"] = 0
 
     if not include_retrieved_memory:
         percentages["conversation_history"] += percentages["retrieved_memory"]

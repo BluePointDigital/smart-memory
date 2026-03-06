@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import numpy as np
 
@@ -12,7 +12,6 @@ class StubSemanticEmbedder:
     dimension = 8
 
     def embed(self, text: str) -> np.ndarray:
-        # Constant normalized vector to deterministically trigger high similarity.
         vector = np.ones(self.dimension, dtype=np.float32)
         vector /= np.linalg.norm(vector)
         return vector
@@ -48,11 +47,11 @@ def test_ingestion_stores_memory_above_threshold(tmp_path):
     assert vector is not None
     assert len(vector) == 384
 
-    # ID consistency: same memory id across JSON and vector payload metadata.
     payload = vector_store.get_payload(result.memory_id)
     assert payload is not None
     assert payload["memory_id"] == result.memory_id
-    assert payload["schema_version"] == "2.0"
+    assert payload["schema_version"] == "3.0"
+    assert payload["status"] == "active"
     assert "content" not in payload
 
 

@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const path = require("path");
 
@@ -30,7 +30,7 @@ const ALLOWED_MEMORY_TYPES = new Set(["semantic", "episodic", "belief", "goal"])
 const ALLOWED_SEARCH_TYPES = new Set(["all", ...ALLOWED_MEMORY_TYPES]);
 
 /**
- * Smart Memory v2.5 Skill for OpenClaw
+ * Smart Memory OpenClaw Skill
  *
  * Core tools:
  * - memory_search
@@ -99,7 +99,7 @@ class SmartMemorySkill {
 
     this.heartbeatTimer = setInterval(() => {
       this.heartbeat().catch((error) => {
-        this.logger.warn?.("[smart-memory-v25] heartbeat failed:", error.message);
+        this.logger.warn?.("[smart-memory-openclaw] heartbeat failed:", error.message);
       });
     }, this.heartbeatIntervalMs);
 
@@ -374,7 +374,7 @@ class SmartMemorySkill {
       if (!health.reachable) {
         return COMMIT_FAILURE_SERVER_UNREACHABLE;
       }
-      return "Memory commit failed — embedder not loaded. Queued for retry.";
+      return "Memory commit failed â€” embedder not loaded. Queued for retry.";
     }
 
     await this._flushRetryQueue();
@@ -454,7 +454,7 @@ class SmartMemorySkill {
 
       if (result.flushed > 0) {
         this.logger.log?.(
-          `[smart-memory-v25] flushed ${result.flushed} queued commit(s); ${result.remaining} remaining.`
+          `[smart-memory-openclaw] flushed ${result.flushed} queued commit(s); ${result.remaining} remaining.`
         );
       }
 
@@ -462,7 +462,7 @@ class SmartMemorySkill {
     } catch (error) {
       const remaining = await this.retryQueue.size().catch(() => 0);
       this.logger.warn?.(
-        "[smart-memory-v25] retry queue flush failed:",
+        "[smart-memory-openclaw] retry queue flush failed:",
         error.message
       );
       return { flushed: 0, remaining };
@@ -501,8 +501,8 @@ function createSmartMemorySkill(options = {}) {
   }
 
   return {
-    name: "smart-memory-v25",
-    description: "Native Smart Memory skill for OpenClaw backed by local FastAPI cognitive OS.",
+    name: "smart-memory-openclaw",
+    description: "Native Smart Memory OpenClaw skill backed by the local FastAPI memory runtime.",
     start: () => skill.startHeartbeat(),
     stop: () => skill.stopHeartbeat(),
 
@@ -606,6 +606,7 @@ module.exports = {
   buildIngestPayload,
   createOpenClawHooks,
 };
+
 
 
 

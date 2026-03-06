@@ -1,4 +1,4 @@
-"""Memory type classifier for ingestion."""
+﻿"""Memory type classifier for ingestion."""
 
 from __future__ import annotations
 
@@ -11,20 +11,45 @@ GOAL_TERMS = {
     "plan",
     "milestone",
     "todo",
-    "start",
-    "begin",
     "launch",
+    "ship",
+    "roadmap",
 }
 
-BELIEF_TERMS = {
+PREFERENCE_TERMS = {
     "prefer",
     "i like",
     "i dislike",
-    "value",
+    "favorite",
+    "favourite",
+    "rather than",
+}
+
+IDENTITY_TERMS = {
+    "i am",
+    "my role",
+    "i work at",
+    "i live in",
+    "i'm",
+}
+
+TASK_STATE_TERMS = {
+    "in progress",
+    "blocked",
+    "resolved",
+    "completed",
+    "next step",
+    "open issue",
+    "abandoned",
+}
+
+BELIEF_TERMS = {
+    "i believe",
     "principle",
     "usually",
     "always",
     "never",
+    "remember that",
 }
 
 SEMANTIC_TERMS = {
@@ -33,16 +58,15 @@ SEMANTIC_TERMS = {
     "means",
     "defined",
     "fact",
-    "remember that",
 }
 
 EPISODIC_TERMS = {
-    "completed",
-    "finished",
-    "did",
     "happened",
     "worked on",
     "implemented",
+    "reviewed",
+    "discussed",
+    "decided",
 }
 
 
@@ -51,9 +75,18 @@ def classify_memory_type(
     user_message: str,
     assistant_message: str = "",
 ) -> MemoryType:
-    """Classify an interaction into episodic, semantic, belief, or goal."""
+    """Classify an interaction into the best-fit v3 memory type."""
 
     text = f"{user_message} {assistant_message}".strip().lower()
+
+    if any(term in text for term in PREFERENCE_TERMS):
+        return MemoryType.PREFERENCE
+
+    if any(term in text for term in IDENTITY_TERMS):
+        return MemoryType.IDENTITY
+
+    if any(term in text for term in TASK_STATE_TERMS):
+        return MemoryType.TASK_STATE
 
     if any(term in text for term in GOAL_TERMS):
         return MemoryType.GOAL

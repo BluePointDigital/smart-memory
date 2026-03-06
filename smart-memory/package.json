@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "smart-memory",
-  "version": "2.1.2",
-  "description": "Smart Memory v2 Node adapter for the Python FastAPI cognitive engine",
+  "version": "3.0.0-experimental",
+  "description": "Smart Memory v3 experimental Node adapter for the Python FastAPI cognitive engine",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -11,3 +11,4 @@
     "node": ">=18.0.0"
   }
 }
+

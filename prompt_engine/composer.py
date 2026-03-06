@@ -1,14 +1,4 @@
-"""Prompt Composer orchestration.
-
-Pipeline:
-User message
-  -> interaction state detection
-  -> entity extraction
-  -> memory retrieval
-  -> memory re-ranking
-  -> token budgeting
-  -> prompt rendering
-"""
+﻿"""Prompt Composer orchestration."""
 
 from __future__ import annotations
 
@@ -19,10 +9,12 @@ from typing import Iterable
 from .entity_extractor import extract_entities
 from .memory_reranker import rerank_memories
 from .memory_retriever import RetrievalBackend, retrieve_with_fallback
-from .prompt_renderer import render_prompt
+from .prompt_renderer import estimate_tokens, render_prompt
 from .schemas import (
     InsightObject,
     InteractionState,
+    LaneName,
+    MemoryInclusionTrace,
     PromptComposerOutput,
     PromptComposerRequest,
 )
@@ -33,17 +25,13 @@ from .token_allocator import allocate_tokens
 @dataclass(frozen=True)
 class PromptComposerConfig:
     insight_confidence_threshold: float = 0.65
+    allow_core_trim: bool = False
 
 
 class PromptComposer:
     """Composable prompt engine with graceful degradation guarantees."""
 
-    def __init__(
-        self,
-        retrieval_backend: RetrievalBackend | None = None,
-        *,
-        config: PromptComposerConfig | None = None,
-    ) -> None:
+    def __init__(self, retrieval_backend: RetrievalBackend | None = None, *, config: PromptComposerConfig | None = None) -> None:
         self.retrieval_backend = retrieval_backend
         self.config = config or PromptComposerConfig()
 
@@ -90,18 +78,45 @@ class PromptComposer:
             interaction_state=temporal_state.interaction_state,
             include_retrieved_memory=bool(selected_memories),
             include_insights=bool(selected_insights),
+            include_core_memory=bool(request.core_memories),
         )
 
         prompt = render_prompt(
             agent_identity=request.agent_identity,
             temporal_state=temporal_state,
             hot_memory=request.hot_memory,
+            core_memories=request.core_memories,
             retrieved_memories=selected_memories,
             selected_insights=selected_insights,
             conversation_history=request.conversation_history,
             current_user_message=request.current_user_message,
             token_allocation=token_allocation,
+            allow_core_trim=self.config.allow_core_trim,
         )
+
+        traces: list[MemoryInclusionTrace] = []
+        for memory in request.core_memories:
+            traces.append(
+                MemoryInclusionTrace(
+                    memory_id=memory.id,
+                    lane=LaneName.CORE,
+                    memory_type=memory.memory_type,
+                    status=memory.status,
+                    inclusion_reason="core_lane",
+                    token_estimate=estimate_tokens(memory.content),
+                )
+            )
+        for memory in selected_memories:
+            traces.append(
+                MemoryInclusionTrace(
+                    memory_id=memory.id,
+                    lane=LaneName.RETRIEVED,
+                    memory_type=memory.memory_type,
+                    status=memory.status,
+                    inclusion_reason="retrieval_match",
+                    token_estimate=estimate_tokens(memory.content),
+                )
+            )
 
         degraded: list[str] = []
         if retrieval.degraded:
@@ -116,6 +131,7 @@ class PromptComposer:
             selected_insights=selected_insights,
             token_allocation=token_allocation,
             degraded_subsystems=degraded,
+            memory_traces=traces,
             metadata={
                 "retrieval_elapsed_ms": retrieval.elapsed_ms,
                 "retrieval_error": retrieval.error,
@@ -145,9 +161,7 @@ class PromptComposer:
             if insight.expires_at is not None and insight.expires_at < now:
                 continue
 
-            insight_terms = {
-                term.lower() for term in insight.content.split() if len(term) >= 3
-            }
+            insight_terms = {term.lower() for term in insight.content.split() if len(term) >= 3}
             if query_terms and not (query_terms & insight_terms):
                 continue
 

@@ -1,7 +1,4 @@
-"""FastAPI server for the cognitive memory system.
-
-Runs as a persistent local process so embedding models and DB connections stay hot.
-"""
+﻿"""FastAPI server for the cognitive memory system."""
 
 from __future__ import annotations
 
@@ -15,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cognitive_memory_system import CognitiveMemorySystem
 from ingestion.ingestion_pipeline import IncomingInteraction
-from prompt_engine.schemas import MemoryType, PromptComposerRequest
+from prompt_engine.schemas import LaneName, MemoryType, PromptComposerRequest
 
 
 class RetrieveRequest(BaseModel):
@@ -23,6 +20,8 @@ class RetrieveRequest(BaseModel):
 
     user_message: str = Field(min_length=1)
     conversation_history: str = ""
+    include_history: bool = False
+    entity_scope: list[str] = Field(default_factory=list)
 
 
 class RunBackgroundRequest(BaseModel):
@@ -31,28 +30,27 @@ class RunBackgroundRequest(BaseModel):
     scheduled: bool = True
 
 
-def create_app(
-    system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMemorySystem,
-) -> FastAPI:
+class ReviseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory: dict
+
+
+def create_app(system_factory: Callable[[], CognitiveMemorySystem] = CognitiveMemorySystem) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Keep the full cognitive stack (including embedder) hot across requests.
         app.state.cognitive_system = system_factory()
         yield
 
-    app = FastAPI(
-        title="Cognitive Memory API",
-        version="0.1.0",
-        lifespan=lifespan,
-    )
+    app = FastAPI(title="Cognitive Memory API", version="0.3.0", lifespan=lifespan)
 
-    def get_system(request: Request) -> CognitiveMemorySystem:
+    def get_system(request: Request):
         system = getattr(request.app.state, "cognitive_system", None)
         if system is None:
             raise HTTPException(status_code=503, detail="Cognitive system not initialized")
         return system
 
-    def resolve_embedder(system: CognitiveMemorySystem):
+    def resolve_embedder(system):
         for component_name in ("retrieval", "ingestion", "background"):
             component = getattr(system, component_name, None)
             if component is None:
@@ -62,14 +60,17 @@ def create_app(
                 return embedder
         return None
 
-    def resolve_json_store(system: CognitiveMemorySystem):
+    def resolve_memory_store(system):
+        store = getattr(system, "memory_store", None)
+        if store is not None:
+            return store
         for component_name in ("retrieval", "ingestion", "background"):
             component = getattr(system, component_name, None)
             if component is None:
                 continue
-            store = getattr(component, "json_store", None)
-            if store is not None:
-                return store
+            candidate = getattr(component, "json_store", None)
+            if candidate is not None:
+                return candidate
         return None
 
     @app.get("/")
@@ -80,11 +81,9 @@ def create_app(
     async def health(request: Request):
         system = get_system(request)
         embedder = resolve_embedder(system)
-
         embedder_loaded = bool(embedder is not None and callable(getattr(embedder, "embed", None)))
         model_name = getattr(embedder, "model_name", None) if embedder is not None else None
         backend = embedder.__class__.__name__ if embedder is not None else None
-
         return {
             "status": "ok" if embedder_loaded else "degraded",
             "embedder_loaded": embedder_loaded,
@@ -93,12 +92,9 @@ def create_app(
         }
 
     @app.get("/memories")
-    async def list_memories(
-        request: Request,
-        memory_type: str | None = Query(default=None, alias="type"),
-    ):
+    async def list_memories(request: Request, memory_type: str | None = Query(default=None, alias="type")):
         system = get_system(request)
-        store = resolve_json_store(system)
+        store = resolve_memory_store(system)
         if store is None:
             raise HTTPException(status_code=503, detail="Memory store unavailable")
 
@@ -108,43 +104,67 @@ def create_app(
                 selected_types = [MemoryType(memory_type.strip().lower())]
             except ValueError as error:
                 allowed = ", ".join(memory.value for memory in MemoryType)
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid memory type '{memory_type}'. Allowed values: {allowed}",
-                ) from error
-
+                raise HTTPException(status_code=400, detail=f"Invalid memory type '{memory_type}'. Allowed values: {allowed}") from error
         memories = store.list_memories(types=selected_types)
         return jsonable_encoder(memories)
 
     @app.get("/memory/{memory_id}")
     async def get_memory(memory_id: str, request: Request):
         system = get_system(request)
-        store = resolve_json_store(system)
+        store = resolve_memory_store(system)
         if store is None:
             raise HTTPException(status_code=503, detail="Memory store unavailable")
-
         memory = store.get_memory(memory_id)
         if memory is None:
             raise HTTPException(status_code=404, detail="Memory not found")
-
         return jsonable_encoder(memory)
+
+    @app.get("/memory/{memory_id}/history")
+    async def get_memory_history(memory_id: str, request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.get_memory_history(memory_id))
+
+    @app.get("/memory/{memory_id}/active")
+    async def get_active_version(memory_id: str, request: Request):
+        system = get_system(request)
+        memory = system.get_active_version(memory_id)
+        if memory is None:
+            raise HTTPException(status_code=404, detail="No active version found")
+        return jsonable_encoder(memory)
+
+    @app.get("/memory/{memory_id}/chain")
+    async def get_revision_chain(memory_id: str, request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.get_revision_chain(memory_id))
 
     @app.get("/insights/pending")
     async def insights_pending(request: Request):
         system = get_system(request)
-        hot_memory_manager = getattr(system, "hot_memory", None)
-        if hot_memory_manager is None:
-            raise HTTPException(status_code=503, detail="Hot memory unavailable")
-
-        hot_memory = hot_memory_manager.get()
+        hot_memory = system.hot_memory.get()
         now = datetime.now(timezone.utc)
-        pending = [
-            insight
-            for insight in hot_memory.insight_queue
-            if insight.expires_at is None or insight.expires_at >= now
-        ]
-
+        pending = [insight for insight in hot_memory.insight_queue if insight.expires_at is None or insight.expires_at >= now]
         return jsonable_encoder({"count": len(pending), "insights": pending})
+
+    @app.get("/lanes/{lane_name}")
+    async def get_lane_contents(lane_name: str, request: Request):
+        system = get_system(request)
+        try:
+            lane = LaneName(lane_name)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid lane") from error
+        return jsonable_encoder(system.get_lane_contents(lane.value))
+
+    @app.post("/lanes/{lane_name}/{memory_id}")
+    async def promote_to_lane(lane_name: str, memory_id: str, request: Request):
+        system = get_system(request)
+        system.promote_memory(memory_id, lane_name)
+        return {"ok": True, "lane": lane_name, "memory_id": memory_id}
+
+    @app.delete("/lanes/{lane_name}/{memory_id}")
+    async def demote_from_lane(lane_name: str, memory_id: str, request: Request):
+        system = get_system(request)
+        system.demote_memory(memory_id, lane_name)
+        return {"ok": True, "lane": lane_name, "memory_id": memory_id}
 
     @app.post("/ingest")
     async def ingest(interaction: IncomingInteraction, request: Request):
@@ -152,13 +172,26 @@ def create_app(
         result = system.ingest_interaction(interaction.model_dump(mode="json"))
         return jsonable_encoder(result)
 
+    @app.post("/revise")
+    async def revise(payload: ReviseRequest, request: Request):
+        system = get_system(request)
+        result = system.revise_memory(payload.memory)
+        return jsonable_encoder(result)
+
     @app.post("/retrieve")
     async def retrieve(payload: RetrieveRequest, request: Request):
         system = get_system(request)
-        result = system.retrieve_context(
-            user_message=payload.user_message,
-            conversation_history=payload.conversation_history,
-        )
+        if hasattr(system, "retrieve"):
+            result = system.retrieve(
+                payload.user_message,
+                include_history=payload.include_history,
+                entity_scope=payload.entity_scope,
+            )
+        else:
+            result = system.retrieve_context(
+                user_message=payload.user_message,
+                conversation_history=payload.conversation_history,
+            )
         return jsonable_encoder(result)
 
     @app.post("/compose")
@@ -172,6 +205,16 @@ def create_app(
         system = get_system(request)
         result = system.run_background_cycle(scheduled=payload.scheduled)
         return jsonable_encoder(result)
+
+    @app.get("/eval/suite/{suite_name}")
+    async def run_eval_suite(suite_name: str, request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.run_eval_suite(suite_name))
+
+    @app.get("/eval/case/{case_id}")
+    async def run_eval_case(case_id: str, request: Request):
+        system = get_system(request)
+        return jsonable_encoder(system.run_eval_case(case_id))
 
     return app
 

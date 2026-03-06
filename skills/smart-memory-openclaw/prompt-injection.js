@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const {
   PENDING_INSIGHT_PROMPT_GUIDANCE,
@@ -11,7 +11,7 @@ const { formatActiveContextBlock } = require("./formatters");
  * Add this line to your base system prompt:
  *
  * "If pending insights appear in your context that relate to the current conversation,
- * surface them naturally to the user. Do not force it — but if there is a genuine
+ * surface them naturally to the user. Do not force it â€” but if there is a genuine
  * connection, seamlessly bring it up."
  */
 
@@ -84,7 +84,7 @@ class PromptContextInjector {
         this.apiClient.pendingInsights(),
       ]);
     } catch (error) {
-      this.logger.warn?.("[smart-memory-v25] prompt injection failed:", error.message);
+      this.logger.warn?.("[smart-memory-openclaw] prompt injection failed:", error.message);
       return {
         ok: false,
         systemPrompt: String(params.baseSystemPrompt || ""),
@@ -173,3 +173,4 @@ function asArray(value) {
 module.exports = {
   PromptContextInjector,
 };
+

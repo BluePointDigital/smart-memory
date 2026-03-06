@@ -1,7 +1,4 @@
-"""Prompt rendering with strict prompt-level token enforcement.
-
-Token counting is approximate (word-based) to stay dependency-free.
-"""
+﻿"""Prompt rendering with strict prompt-level token enforcement."""
 
 from __future__ import annotations
 
@@ -59,16 +56,6 @@ def _trim_oldest_words(text: str, words_to_drop: int = 24) -> str:
     return f"... {remaining}" if remaining else ""
 
 
-def _trim_newest_words(text: str, words_to_drop: int = 24) -> str:
-    words = text.split()
-    if not words:
-        return ""
-    if len(words) <= words_to_drop:
-        return ""
-
-    return " ".join(words[:-words_to_drop])
-
-
 def _select_items_for_budget(items: list[str], token_budget: int) -> list[str]:
     if token_budget <= 0:
         return []
@@ -113,7 +100,7 @@ def _memory_lines_for_budget(memories: list[LongTermMemory], token_budget: int) 
         if not content:
             continue
 
-        line = f"[{memory.type.value}] {content}"
+        line = f"[{memory.memory_type.value}|{memory.status.value}] {content}"
         cost = estimate_tokens(line)
         if used + cost > token_budget:
             break
@@ -124,14 +111,8 @@ def _memory_lines_for_budget(memories: list[LongTermMemory], token_budget: int) 
     return lines
 
 
-def _insight_lines_for_budget(
-    interaction_state: InteractionState,
-    insights: list[InsightObject],
-    token_budget: int,
-) -> list[str]:
-    if interaction_state != InteractionState.RETURNING:
-        return []
-    if token_budget <= 0:
+def _insight_lines_for_budget(interaction_state: InteractionState, insights: list[InsightObject], token_budget: int) -> list[str]:
+    if interaction_state != InteractionState.RETURNING or token_budget <= 0:
         return []
 
     lines: list[str] = []
@@ -165,16 +146,13 @@ def _render_bullets(items: list[str]) -> str:
 def _temporal_text(temporal_state: TemporalState, mode: int) -> str:
     if mode <= 0:
         return ""
-
     if mode == 1:
         return f"Interaction State: {temporal_state.interaction_state.value}"
-
     if mode == 2:
         return (
             f"Time Since Last Interaction: {temporal_state.time_since_last_interaction}\n"
             f"Interaction State: {temporal_state.interaction_state.value}"
         )
-
     return (
         f"Current Time: {temporal_state.current_timestamp.isoformat()}\n"
         f"Time Since Last Interaction: {temporal_state.time_since_last_interaction}\n"
@@ -186,6 +164,7 @@ def _build_prompt(
     *,
     identity_text: str,
     temporal_text: str,
+    core_lines: list[str],
     active_projects: list[str],
     working_questions: list[str],
     top_of_mind: list[str],
@@ -203,45 +182,18 @@ def _build_prompt(
         f"{_render_bullets(top_of_mind)}"
     )
 
-    parts: list[str] = []
-    parts.append("<system>")
-    parts.append("")
-    parts.append("[AGENT IDENTITY]")
-    parts.append(identity_text or "N/A")
-    parts.append("")
-    parts.append("[TEMPORAL STATE]")
-    parts.append(temporal_text or "N/A")
-    parts.append("")
-    parts.append("[WORKING CONTEXT]")
-    parts.append(working_context)
-    parts.append("")
-    parts.append("</system>")
-    parts.append("")
+    parts: list[str] = ["<system>", "", "[AGENT IDENTITY]", identity_text or "N/A", "", "[TEMPORAL STATE]", temporal_text or "N/A", ""]
+    if core_lines:
+        parts.extend(["[CORE MEMORY]", "", "\n".join(core_lines), ""])
+    parts.extend(["[WORKING CONTEXT]", working_context, "", "</system>", ""])
 
     if insight_lines:
-        parts.append("[BACKGROUND INSIGHTS]")
-        parts.append("The following insights were generated during background reflection cycles.")
-        parts.append("")
-        parts.append("\n".join(insight_lines))
-        parts.append("")
+        parts.extend(["[BACKGROUND INSIGHTS]", "The following insights were generated during background reflection cycles.", "", "\n".join(insight_lines), ""])
 
     if retrieved_lines:
-        parts.append("[RELEVANT LONG-TERM MEMORY]")
-        parts.append("")
-        parts.append("\n".join(retrieved_lines))
-        parts.append("")
+        parts.extend(["[RETRIEVED MEMORY]", "", "\n".join(retrieved_lines), ""])
 
-    parts.append("<user>")
-    parts.append("")
-    parts.append("[RECENT CONVERSATION]")
-    parts.append(conversation_text or "N/A")
-    parts.append("")
-    parts.append(current_user_message.strip() or "N/A")
-    parts.append("")
-    parts.append("</user>")
-    parts.append("")
-    parts.append("<assistant>")
-
+    parts.extend(["<user>", "", "[RECENT CONVERSATION]", conversation_text or "N/A", "", current_user_message.strip() or "N/A", "", "</user>", "", "<assistant>"])
     return "\n".join(parts)
 
 
@@ -255,68 +207,33 @@ def render_prompt(
     conversation_history: str,
     current_user_message: str,
     token_allocation: TokenAllocation,
+    core_memories: list[LongTermMemory] | None = None,
+    allow_core_trim: bool = False,
 ) -> str:
-    """Render the final prompt and strictly enforce max_prompt_tokens.
+    """Render the final prompt and strictly enforce max_prompt_tokens."""
 
-    Eviction order when over budget:
-    1) oldest conversation history
-    2) lower-scored retrieved memories (tail)
-    3) insight queue items (tail)
-    4) working memory items
-    5) temporal state
-    6) agent identity (never evicted)
-    """
-
-    identity_text = _truncate_to_budget(
-        agent_identity.strip(),
-        token_allocation.system_identity,
-    )
-
+    identity_text = _truncate_to_budget(agent_identity.strip(), token_allocation.system_identity)
     temporal_mode = 3
 
+    core_lines = _memory_lines_for_budget(core_memories or [], token_allocation.core_memory)
     working_budget = token_allocation.working_memory
-    active_projects = _select_items_for_budget(
-        hot_memory.active_projects,
-        max(0, int(working_budget * 0.35)),
-    )
-    working_questions = _select_items_for_budget(
-        hot_memory.working_questions,
-        max(0, int(working_budget * 0.30)),
-    )
-    top_of_mind = _select_items_for_budget(
-        hot_memory.top_of_mind,
-        max(0, working_budget - int(working_budget * 0.35) - int(working_budget * 0.30)),
-    )
+    active_projects = _select_items_for_budget(hot_memory.active_projects, max(0, int(working_budget * 0.35)))
+    working_questions = _select_items_for_budget(hot_memory.working_questions, max(0, int(working_budget * 0.30)))
+    top_of_mind = _select_items_for_budget(hot_memory.top_of_mind, max(0, working_budget - int(working_budget * 0.35) - int(working_budget * 0.30)))
 
-    insight_lines = _insight_lines_for_budget(
-        interaction_state=temporal_state.interaction_state,
-        insights=selected_insights,
-        token_budget=token_allocation.insight_queue,
-    )
+    insight_lines = _insight_lines_for_budget(temporal_state.interaction_state, selected_insights, token_allocation.insight_queue)
+    retrieved_lines = _memory_lines_for_budget(retrieved_memories, token_allocation.retrieved_memory)
 
-    retrieved_lines = _memory_lines_for_budget(
-        memories=retrieved_memories,
-        token_budget=token_allocation.retrieved_memory,
-    )
-
-    conversation_text = _truncate_to_budget(
-        conversation_history.strip(),
-        token_allocation.conversation_history,
-        keep_tail=True,
-    )
-    current_message = current_user_message.strip()
-
+    conversation_text = _truncate_to_budget(conversation_history.strip(), token_allocation.conversation_history, keep_tail=True)
+    current_message = _truncate_to_budget(current_user_message.strip(), max(32, token_allocation.conversation_history))
     max_prompt_tokens = token_allocation.total_tokens
 
     for _ in range(1024):
-        temporal_text = _truncate_to_budget(
-            _temporal_text(temporal_state, temporal_mode),
-            token_allocation.temporal_state,
-        )
-
+        temporal_text = _truncate_to_budget(_temporal_text(temporal_state, temporal_mode), token_allocation.temporal_state)
         prompt = _build_prompt(
             identity_text=identity_text,
             temporal_text=temporal_text,
+            core_lines=core_lines,
             active_projects=active_projects,
             working_questions=working_questions,
             top_of_mind=top_of_mind,
@@ -330,21 +247,14 @@ def render_prompt(
             return prompt
 
         if conversation_text:
-            trimmed = _trim_oldest_words(conversation_text, 24)
-            if trimmed == conversation_text:
-                conversation_text = ""
-            else:
-                conversation_text = trimmed
+            conversation_text = _trim_oldest_words(conversation_text, 24)
             continue
-
         if retrieved_lines:
             retrieved_lines.pop()
             continue
-
         if insight_lines:
             insight_lines.pop()
             continue
-
         if top_of_mind:
             top_of_mind.pop()
             continue
@@ -354,35 +264,12 @@ def render_prompt(
         if active_projects:
             active_projects.pop()
             continue
-
+        if core_lines and allow_core_trim:
+            core_lines.pop()
+            continue
         if temporal_mode > 0:
             temporal_mode -= 1
             continue
-
-        # Safety fallback: preserve identity while still hard-bounding prompt length.
-        if current_message:
-            current_message = _trim_newest_words(current_message, 24)
-            continue
-
         break
 
-    final_temporal_text = _truncate_to_budget(
-        _temporal_text(temporal_state, temporal_mode),
-        token_allocation.temporal_state,
-    )
-    final_prompt = _build_prompt(
-        identity_text=identity_text,
-        temporal_text=final_temporal_text,
-        active_projects=active_projects,
-        working_questions=working_questions,
-        top_of_mind=top_of_mind,
-        insight_lines=insight_lines,
-        retrieved_lines=retrieved_lines,
-        conversation_text=conversation_text,
-        current_user_message=current_message,
-    )
-
-    if estimate_tokens(final_prompt) > max_prompt_tokens:
-        return _truncate_to_budget(final_prompt, max_prompt_tokens)
-
-    return final_prompt
+    return prompt

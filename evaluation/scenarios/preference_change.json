@@ -1,0 +1,24 @@
+﻿{
+  "id": "preference_change",
+  "suite": "regression",
+  "messages": [
+    {
+      "user_message": "I prefer tea for morning work.",
+      "assistant_message": "Captured your preference.",
+      "source_session_id": "eval_session_a",
+      "source_message_ids": ["m1"]
+    },
+    {
+      "user_message": "I prefer coffee now instead of tea.",
+      "assistant_message": "Updated preference noted.",
+      "source_session_id": "eval_session_b",
+      "source_message_ids": ["m2"]
+    }
+  ],
+  "query": "What drink do I prefer now?",
+  "expected_substrings": ["coffee"],
+  "minimum_recall": 0.5,
+  "max_stale_leakage": 0,
+  "max_prompt_tokens": 512,
+  "notes": ["Ensures newer preference supersedes older preference."]
+}

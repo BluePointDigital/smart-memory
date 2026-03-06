@@ -1,9 +1,26 @@
-# Changelog
+﻿# Changelog
 
+## [3.0.0-experimental] - 2026-03-06
+
+### Added
+- Canonical SQLite-backed v3 memory store with JSON migration/export compatibility.
+- Revision-aware ingestion with deterministic `ADD`, `UPDATE`, `SUPERSEDE`, `EXPIRE`, `NOOP`, and conservative `MERGE` decisions.
+- First-class core and working memory lanes plus lane inspection and promotion APIs.
+- Stable entity normalization, registry, and lightweight relationship hints for entity-aware retrieval.
+- Context assembly v2 with core lane inclusion traces and status-aware retrieval filtering.
+- Evaluation harness, migration scaffolding, and v3 regression tests.
+
+### Changed
+- Memory schema is now v3-first with status, revision links, validity windows, lane eligibility, retrieval tags, and optional structured facets.
+- Retrieval excludes superseded and expired memories by default and applies configurable scoring weights.
+- HTTP API remains additive-compatible while exposing new revision, lane, history, and eval endpoints.
+- Repository documentation now reflects the v3 architecture, storage model, lane semantics, and integration flow.
+
+---
 ## [2.5.0] - 2026-03-05
 
 ### Added
-- New native OpenClaw skill package at `skills/smart-memory-v25/` for the local FastAPI cognitive engine.
+- New native OpenClaw skill package at `skills/smart-memory-openclaw/` for the local FastAPI cognitive engine.
 - Three active memory tools:
   - `memory_search`
   - `memory_commit`
@@ -21,7 +38,7 @@
 - Memory commit flow now serializes commits to protect local CPU embedding throughput under bursty commit calls.
 - Retrieval wrapper now uses compatibility fallback for `/retrieve` payload filters, then applies type/relevance/limit filtering safely client-side.
 - Auto-tag fallback is now extensible via rule definitions (`tagging.js`) and includes default `working_question` + `decision` heuristics.
-- Documentation sweep completed: README now includes `skills/smart-memory-v25` architecture details, and skill docs now enforce CPU-only PyTorch policy with no GPU fallback guidance.
+- Documentation sweep completed: README now includes `skills/smart-memory-openclaw` architecture details, and skill docs now enforce CPU-only PyTorch policy with no GPU fallback guidance.
 - README architecture content was consolidated into a whole-system overview, Mermaid flowcharts were simplified for consistent rendering, and obsolete `ARCHITECTURE.md` was removed.
 
 ### Fixed
@@ -139,3 +156,7 @@
 ### Notes
 - Word-frequency method works but has limited semantic understanding
 - Neural embeddings (v2) recommended for production use
+
+
+
+

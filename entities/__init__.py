@@ -1,6 +1,14 @@
-"""Entity registry package."""
+﻿"""Entity package exports."""
 
 from .alias_resolver import EntityAliasResolver
-from .registry import EntityAlias, EntityRegistry
+from .entity_normalizer import EntityNormalizer
+from .entity_registry import EntityRecord, EntityRegistry
+from .relationship_index import RelationshipIndex
 
-__all__ = ["EntityAlias", "EntityAliasResolver", "EntityRegistry"]
+__all__ = [
+    "EntityAliasResolver",
+    "EntityNormalizer",
+    "EntityRecord",
+    "EntityRegistry",
+    "RelationshipIndex",
+]
